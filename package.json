@@ -1,0 +1,84 @@
+{
+  "name": "ai-novel-studio",
+  "version": "1.7.5",
+  "private": true,
+  "description": "面向番茄小说创作的本地多用户 AI 写作桌面软件",
+  "author": "OpenCode",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/start-desktop-dev.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server.js",
+    "electron": "electron .",
+    "desktop:dev": "node scripts/start-desktop-dev.mjs",
+    "prepare-release": "node scripts/prepare-release.mjs",
+    "generate-icons": "node scripts/generate-icons.mjs",
+    "test:parsers": "node scripts/test-parsers.mjs",
+    "dist:desktop": "node scripts/prepare-release.mjs && npm run generate-icons && npm run build && node scripts/run-desktop-build.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "lucide-react": "^0.511.0",
+    "pixi-live2d-display": "^0.4.0",
+    "pixi.js": "^6.5.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.4.1",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^35.7.5",
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.34.2",
+    "vite": "^5.4.19",
+    "wait-on": "^8.0.3"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.local.ainovelstudio",
+    "productName": "AI小说工作台",
+    "icon": "build/icon.ico",
+    "electronDist": "node_modules/electron/dist",
+    "electronVersion": "35.7.5",
+    "files": [
+      "web-dist/**/*",
+      "server.js",
+      "projectRepository.js",
+      "naturalnessGate.js",
+      "promptComposer.js",
+      "automationEngine.js",
+      "build/icon.png",
+      "build/icon.ico",
+      "electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "release-1.7.5"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AI小说工作台",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false
+    }
+  }
+}
