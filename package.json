@@ -1,6 +1,6 @@
 {
   "name": "ai-novel-studio",
-  "version": "1.7.6",
+  "version": "1.7.7",
   "private": true,
   "description": "面向番茄小说创作的本地多用户 AI 写作桌面软件",
   "author": "OpenCode",
@@ -59,7 +59,7 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.7.6"
+      "output": "release-1.7.7"
     },
     "win": {
       "target": "nsis",

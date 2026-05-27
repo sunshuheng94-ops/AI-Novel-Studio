@@ -163,9 +163,19 @@ function getPlatformStrategy(project) {
   };
 }
 
-const appVersion = '1.7.6';
+const appVersion = '1.7.7';
 
 const changelogItems = [
+  {
+    version: '1.7.7',
+    date: '2026-05-27',
+    title: '升级启动指南与自然读感守门',
+    changes: [
+      '重做进入软件后的使用指导弹窗，按当前版本的真实工作流展示模型配置、蓝图、章节卡、流式预览、轻量模式和发布检查。',
+      '继续压低旁白里的“否定、否定、再解释/升格”和三项名词排比句式，减少生硬作者总结感。',
+      '对话自然度检测改为更温和的密度触发，保留紧急短句，优先处理连续清单式命令和状态播报。',
+    ],
+  },
   {
     version: '1.7.6',
     date: '2026-05-27',
@@ -3213,38 +3223,65 @@ export default function App() {
       ) : null}
       {showWelcomeGuide ? (
         <div className="shortcut-overlay" onClick={() => setShowWelcomeGuide(false)}>
-          <section className="panel shortcut-modal changelog-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="section-header">
+          <section className="panel shortcut-modal welcome-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="welcome-hero">
               <div>
-                <p className="eyebrow">Welcome Guide</p>
-                <h2>AI小说工作台使用教程</h2>
+                <p className="eyebrow">AI Novel Studio v{appVersion}</p>
+                <h2>从蓝图到正文的自动连载控制台</h2>
+                <p>当前版本优先做三件事：章节卡只管剧情轨道，正文支持流式预览，生成后用自然读感守门减少说明腔、清单式台词和机械排比。</p>
               </div>
-              <button type="button" className="secondary small" onClick={() => setShowWelcomeGuide(false)}>关闭</button>
+              <button type="button" className="secondary small" onClick={() => setShowWelcomeGuide(false)}>进入工作台</button>
             </div>
-            <div className="changelog-list">
-              <article className="changelog-item">
-                <div className="changelog-title"><strong>推荐流程</strong><span>长篇自动写作</span></div>
-                <ul>
-                  <li>先填写作品灵感、题材、文风和核心设定，再生成长篇蓝图。</li>
-                  <li>按蓝图自动分卷，然后自动排章节卡；章节卡是正文生成的轨道。</li>
-                  <li>确认章节卡数量足够后，再使用批量写作或写到指定进度。</li>
-                </ul>
+
+            <div className="welcome-quick-grid">
+              <article>
+                <span>01</span>
+                <strong>配置模型</strong>
+                <p>在“AI 助手”里保存 DeepSeek 和 GPT-5.5。混合路由会让规划更轻、正文更稳。</p>
               </article>
-              <article className="changelog-item">
-                <div className="changelog-title"><strong>章节卡控制参数</strong><span>影响正文质量</span></div>
-                <ul>
-                  <li>章节功能、对话密度、叙述质感、人味锚点、正文禁区和章末交付物会直接进入自动写作。</li>
-                  <li>编辑章节卡时，不要删除“主功能=...；副功能=...”等结构化信号。</li>
-                  <li>章节卡不够时，自动写正文会提示先补排，避免无卡生成导致跑偏。</li>
-                </ul>
+              <article>
+                <span>02</span>
+                <strong>生成蓝图</strong>
+                <p>先写清作品灵感、题材、读者和文风，再生成长篇蓝图与作者人设。</p>
               </article>
-              <article className="changelog-item">
-                <div className="changelog-title"><strong>检查与修订</strong><span>连载稳定性</span></div>
-                <ul>
-                  <li>每 20 章建议做一致性检查，检查点报告会影响后续章节卡和正文。</li>
-                  <li>自然感守门会检测 Markdown、否定排除句、碎句、逗号堆叠长句和模板章末。</li>
-                  <li>高对话章节会保护台词语义，优先局部修复，避免整章清洗改坏人物立场。</li>
-                </ul>
+              <article>
+                <span>03</span>
+                <strong>排章节卡</strong>
+                <p>章节卡默认只写目标、事件、人物、线索、结果和钩子，不再规定正文口吻。</p>
+              </article>
+              <article>
+                <span>04</span>
+                <strong>流式写正文</strong>
+                <p>当前章和章节卡支持实时预览；草稿展示不直接落库，完成清理后再保存。</p>
+              </article>
+            </div>
+
+            <div className="welcome-focus">
+              <div>
+                <p className="eyebrow">Recommended Path</p>
+                <h3>推荐自动写作路径</h3>
+              </div>
+              <ol>
+                <li>新建作品，填入核心设定和文风要求。</li>
+                <li>生成长篇蓝图，再自动分卷。</li>
+                <li>每次排 3 章章节卡，确认剧情轨道没有跑偏。</li>
+                <li>打开轻量生成模式写当前章，观察流式预览。</li>
+                <li>每 20 章做检查点，修正伏笔、角色状态和后续章节卡。</li>
+              </ol>
+            </div>
+
+            <div className="welcome-note-grid">
+              <article>
+                <strong>自然读感守门</strong>
+                <p>会优先压“不是A，也不是B，而是C”、三项名词排比、孤立状态台词和 Markdown 痕迹。普通短句、紧急命令和自然反驳会尽量保留。</p>
+              </article>
+              <article>
+                <strong>章节卡怎么改</strong>
+                <p>只改剧情事实：本章目标、关键物件、出场人物、结果、章末钩子。不要把章节卡写成正文风格说明书。</p>
+              </article>
+              <article>
+                <strong>什么时候人工看</strong>
+                <p>模型连续超时、章节卡不可解析、自然度硬检测未过、或检查点提示人物状态冲突时，先停下来确认。</p>
               </article>
             </div>
           </section>

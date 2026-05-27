@@ -35,23 +35,24 @@ export function classifyNaturalnessIssues(issues = [], content = '', normalizeTe
   const hardIssueCount = issues.filter((issue) => ['pov-shift', 'markdown-noise', 'static-room-summary', 'action-static-list-disconnect'].includes(issue.type)).length;
   const structuralIssueCount = issues.filter((issue) => structuralDetailIssueTypes.includes(issue.type)).length;
   const dashExplainCount = issues.filter((issue) => issue.type === 'dash-explain-judgement').length;
-  const sentenceIssueCount = issues.filter((issue) => ['choppy-paragraph', 'action-chain-fragmented', 'isolated-short-sentence-density', 'noun-fragment-sentence', 'noun-fragment-density', 'isolated-label-sentence', 'isolated-label-density', 'comma-stacked-long-sentence', 'parallel-body-detail-overload', 'parallel-scene-detail-overload', 'overloaded-detail-sentence', 'fuzzy-subject-detail', 'patchwork-description', 'cause-state-result-chop', 'sentence-chain-flatness', 'detail-dimension-overload'].includes(issue.type)).length
+  const sentenceIssueCount = issues.filter((issue) => ['choppy-paragraph', 'action-chain-fragmented', 'isolated-short-sentence-density', 'noun-fragment-sentence', 'noun-fragment-density', 'isolated-label-sentence', 'isolated-label-density', 'comma-stacked-long-sentence', 'parallel-body-detail-overload', 'parallel-scene-detail-overload', 'overloaded-detail-sentence', 'fuzzy-subject-detail', 'patchwork-description', 'cause-state-result-chop', 'sentence-chain-flatness', 'detail-dimension-overload', 'triple-noun-enumeration'].includes(issue.type)).length
     + (dashExplainCount >= 3 ? dashExplainCount : 0);
   const transitionIssueCount = issues.filter((issue) => ['stiff-transition', 'missing-reaction-bridge', 'unmotivated-action-shift'].includes(issue.type)).length;
   const criticalTransitionCount = issues.filter((issue) => issue.type === 'missing-reaction-bridge' && issue.critical).length;
-  const strongNegativeIssueCount = issues.filter((issue) => ['negative-reveal', 'negative-comma-triple', 'negative-triple', 'negative-dash-reveal', 'negative-period-reveal', 'negative-turn-density', 'mechanical-negation-density', 'mechanical-negation-window-density'].includes(issue.type)).length;
+  const strongNegativeIssueCount = issues.filter((issue) => ['negative-reveal', 'negative-negative-explain', 'negative-negative-affirm', 'negative-comma-triple', 'negative-triple', 'negative-dash-reveal', 'negative-period-reveal', 'negative-turn-density', 'mechanical-negation-density', 'mechanical-negation-window-density'].includes(issue.type)).length;
   const dialogueIssueCount = issues.filter((issue) => /^dialogue-/.test(issue.type)).length;
+  const hardDialogueIssueCount = issues.filter((issue) => ['dialogue-too-sparse', 'dialogue-too-aligned', 'dialogue-over-explains', 'dialogue-negative-command-chain'].includes(issue.type)).length;
   if (issues.some((issue) => issue.type === 'pov-shift')) return 'heavy';
   if (hardIssueCount >= 2) return 'heavy';
   if (issues.some((issue) => ['markdown-noise', 'static-room-summary', 'action-static-list-disconnect'].includes(issue.type) && (issue.index || 0) < 500)) return 'heavy';
   if (structuralIssueCount >= 3) return 'heavy';
-  if (dialogueIssueCount >= 2) return 'heavy';
+  if (hardDialogueIssueCount >= 1 || dialogueIssueCount >= 5) return 'heavy';
   if (transitionIssueCount >= 4 && (negativeIssueCount >= 2 || sentenceIssueCount >= 2 || structuralIssueCount >= 1)) return 'heavy';
   if (criticalTransitionCount >= 1 || transitionIssueCount >= 2) return 'medium';
   if (negativeIssueCount > 0
     && negativeIssueCount <= 3
     && issues.every((issue) => /^negative|^empty|plain-negative|^mechanical-negation/.test(issue.type))
-    && !issues.some((issue) => ['negative-reveal', 'negative-comma-triple', 'negative-triple', 'negative-dash-reveal', 'negative-period-reveal', 'empty-reveal', 'mechanical-negation-density', 'mechanical-negation-window-density'].includes(issue.type))) {
+    && !issues.some((issue) => ['negative-reveal', 'negative-negative-explain', 'negative-negative-affirm', 'negative-comma-triple', 'negative-triple', 'negative-dash-reveal', 'negative-period-reveal', 'empty-reveal', 'mechanical-negation-density', 'mechanical-negation-window-density'].includes(issue.type))) {
     return 'medium';
   }
   if (negativeIssueCount >= 6 && strongNegativeIssueCount >= 3) return 'heavy';
@@ -95,6 +96,8 @@ export function pickNaturalnessRepairIssue(issues = [], excludeTypes = []) {
     'sentence-chain-flatness',
     'prop-dossier-description',
     'negative-reveal',
+    'negative-negative-explain',
+    'negative-negative-affirm',
     'negative-comma-triple',
     'negative-period-reveal',
     'negative-comma-reveal',
@@ -105,7 +108,9 @@ export function pickNaturalnessRepairIssue(issues = [], excludeTypes = []) {
     'empty-comma-reveal',
     'dash-explain-judgement',
     'noun-fragment-sentence',
+    'triple-noun-enumeration',
     'isolated-label-sentence',
+    'dialogue-negative-command-chain',
     'choppy-paragraph',
     'action-chain-fragmented',
   ];

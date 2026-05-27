@@ -745,6 +745,35 @@ const dialoguePurpose = buildDialoguePurposeContract({ card: { summary: '系统�
 assert.ok(formatDialoguePurposeContract(dialoguePurpose).includes('系统每次说话必须'), 'dialogue purpose should make system dialogue action-changing');
 const dialogueContract = buildDialogueDensityContract({ card: { summary: '系统和主角互相吐槽，主角求救。', cast: '杜蓁蓁、魔法少女系统' }, scenePack: { title: '系统登场 + 求救' } });
 assert.ok(formatDialogueDensityContract(dialogueContract).includes('至少2轮'), 'dialogue contract should require enough dialogue in dialogue-heavy packs');
+const dialogueNaturalnessIssues = findDialogueIssues(`“快。”
+她停了一下，没立刻接话。
+“行。”
+他看向门禁槽。
+“所以。”
+她避开他的视线。
+“别看背面。别补签。”
+他把卡片扣回桌上。
+“你们先往门口退，我来关维护气闸。”
+她低头确认伤员位置。
+“可以，但只够撑十秒。”
+他咽回后半句话。
+“先把线固定住，碎布和门禁片都别碰。”
+她没回答，只把手套递过去。`, { summary: '两人对峙并交换情报。' });
+assert.ok(dialogueNaturalnessIssues.some((issue) => issue.type === 'dialogue-fragment-command'), 'dialogue gate should catch fragment commands');
+assert.ok(dialogueNaturalnessIssues.some((issue) => issue.type === 'dialogue-bare-status'), 'dialogue gate should catch bare status replies');
+assert.ok(dialogueNaturalnessIssues.some((issue) => issue.type === 'dialogue-orphan-connector'), 'dialogue gate should catch orphaned connectors');
+assert.ok(dialogueNaturalnessIssues.some((issue) => issue.type === 'dialogue-negative-command-chain'), 'dialogue gate should catch negative command chains');
+assert.ok(translateIssuesToRevisionActions(dialogueNaturalnessIssues).includes('半截命令补对象'), 'dialogue issues should translate to concrete revision actions');
+assert.notEqual(classifyNaturalnessIssues(dialogueNaturalnessIssues.filter((issue) => ['dialogue-fragment-command', 'dialogue-bare-status', 'dialogue-orphan-connector'].includes(issue.type)), '高对话样本文本'), 'heavy', 'soft dialogue micro-issues alone should not force heavy rewrite');
+assert.equal(findDialogueIssues(`“别看”
+他把卡片扣住。
+“行。”
+她伸手去摸门锁。
+“现在。”
+他停了一下。
+“别回门。”
+她看向侧廊。`, { summary: '主角撤离旧门禁区域。' }).length, 0, 'dialogue gate should not hard-repair normal short replies outside high-dialogue chapters');
+assert.equal(findDialogueIssues('“行。”\n他点头。', { summary: '普通动作段。' }).length, 0, 'dialogue gate should ignore tiny dialogue samples');
 assert.ok(buildInformationBudget(noHookCard).repeatAvoidance.includes('不要再用对话完整解释'), 'information budget should prevent repeated dialogue exposition');
 assert.ok(buildCharacterKnowledgeLedger({ project: { premise: '魏杰穿越成博士' }, card: { cast: '魏杰、灰喉、系统', summary: '灰喉怀疑魏杰' } }).some((line) => line.includes('误会')), 'knowledge ledger should track character misunderstandings');
 assert.ok(buildActionCausalityChain(noHookCard).every((line) => line.includes('下一步')), 'action chain should force causal transitions');
@@ -791,6 +820,13 @@ const userChapterIssues = findNaturalnessIssues(`对讲机在腰间震了一下�
 
 “你不是博士——你是谁的棋子？”`);
 assert.notEqual(classifyNaturalnessIssues(userChapterIssues, userChapterIssues.map((issue) => issue.text).join('\n')), 'heavy', 'normal action/suspense chapter should not be a hard naturalness failure');
+const negativeExplainIssues = findNaturalnessIssues('它不再是剧情节点，也不是玩家嘴里一句“刀了”。它变成了一条旧留言，一块金属牌，一个被反复避开的交接备注，安静地躺在废墟深处。');
+assert.ok(negativeExplainIssues.some((issue) => issue.type === 'negative-negative-explain'), 'naturalness gate should catch negative-negative-explain sentence shape');
+assert.ok(negativeExplainIssues.some((issue) => issue.type === 'triple-noun-enumeration'), 'naturalness gate should catch triple noun enumeration');
+const negativeExplainActions = translateIssuesToRevisionActions(negativeExplainIssues);
+assert.ok(negativeExplainActions.includes('否定、否定、再解释'), 'negative-negative issues should translate to concrete revision action');
+assert.ok(negativeExplainActions.includes('三项名词排比'), 'triple noun enumeration should translate to concrete revision action');
+assert.equal(findNaturalnessIssues('他摸到一条裂开的识别带，立刻停住手。').some((issue) => issue.type === 'triple-noun-enumeration'), false, 'single concrete noun detail should not trigger triple enumeration');
 assert.doesNotThrow(() => assertEnoughChapterCards({ automation: { chapterCards: [{}, {}, {}] }, startChapter: 2, batchCount: 2 }));
 assert.throws(() => assertEnoughChapterCards({ automation: { chapterCards: [{}] }, startChapter: 1, batchCount: 2 }), /章节卡不足/);
 

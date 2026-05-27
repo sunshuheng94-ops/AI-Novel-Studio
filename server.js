@@ -1911,6 +1911,8 @@ function buildHumanWritingEnginePrompt({ project = {}, automation = {}, card = {
     buildAuthorPersonaGuide(automation.authorPersona),
     '【自然读感偏好】',
     '否定对照句式极低频：像“第一反应不是A，也不是B”“没有A。也没有B。”“不A。不B。”“不是A，不是B，而是C”“不像A，也不像B”这类句式，默认几十章才偶尔保留一次，且只在身份确认、重大反转、死亡确认、人物崩溃、误判被现实打脸等节点使用。普通段落不要用它制造真实感、悬念或口吻，优先改成动作、停顿、触感、声音、物件反馈、人物迟疑或下一步选择。',
+    '否定否定再解释要更稀有：像“它不再是A，也不是B。它变成了C”“不是A，也不是B，就是C”“不是A，而是B”“不是A，说明/意味着B”这类先否定再给意义、解释、转折或升格的句式，默认几十章内最多一次，且必须非常贴合当下剧情逻辑。只要不是强身份确认、关键误判纠正、死亡/牺牲确认或人物认知崩塌，就宁可不用；改成角色看见具体痕迹、身体反应、手上动作、物件反馈或下一步选择。',
+    '三项名词排比默认不用：像“一条旧留言，一块金属牌，一个交接备注”“一枚签、一段录音、一扇门”这类三项名词列举会很容易显得作者在替读者升格意义。除非章内唯一一次、上下文确实需要把多个已出现物件压成一个关键认知，否则只保留最能改变行动的一项，其余并入动作或干脆删掉。',
     '环境描写优先服务行动。可以有氛围和比喻，但通常每个环境段只保留一个最有效的强细节；其余信息通过人物呼吸、视线受阻、脚下打滑、伤口被牵动、路线改变、掩体可用、敌人位置暴露或物件可利用带出。',
     '吐槽和比喻优先少而准：同一段通常只保留一句吐槽或一个比喻；比喻必须和前后动作逻辑一致，不能前半句像一个东西、后半句又跳到完全不搭的效果。危险、追逐、受伤、求援段宁可少吐槽，优先把选择和后果写清楚。',
     '主角不能像抽象梗复述机器。默认先写正常人的第一反应：怕、疼、犹豫、判断、护人、误判、改动作；吐槽、梗和夸张比喻只作为少量点缀，通常出现在动作受阻、现实打脸、关系尴尬或危险稍有空隙时。连续两段都靠吐槽收尾时，删掉后一处或改成动作、沉默、身体反应。',
@@ -1924,6 +1926,10 @@ function buildHumanWritingEnginePrompt({ project = {}, automation = {}, card = {
     '类型经验边界：主角的类型经验、游戏经验、原作认知、系统认知只用于形成初始误判或快速判断，不能成为每个压力点的解释框架。遇到真实伤痛、救人、撤离和关系冲突时，优先写现场证据和人物选择；游戏/原作/系统梗只在它改变行动、暴露误判或被现实打脸时出现。人物先像人，再像有梗的人。',
     '高压判断链保护：在高压撤离、救人、伤情恶化、倒计时、敌人逼近、门禁/陷阱触发等段落，幽默不能打断“看见问题 → 判断代价 → 做出安排/动作”的链条。先让人物完成判断和安排；如果这一小段已经完成，才允许补一句短促口吻。若吐槽会插在判断和行动之间，应删掉或改成身体反应、停顿、咽回话、手指发抖等正常反应。',
     '对话逻辑桥：汇报、远程通信、撤离安排、战斗指挥、价值判断这类台词，不要写成“能。状态。风险。我会处理。”的报告清单。角色可以说短句，但要按真人说话补出最小连接：转折、因果、让步、犹豫、改口或动作停顿，让“现在怎样 → 所以怎么办 → 为什么这么选”自然连上。',
+    '对话必要成分：人物台词可以急、短、被打断，但如果一句话少了主语、谓语、对象、方向、条件或承接词会让读者停顿回推，就优先补足。不要让台词长期写成“快。”“行。”“继续走。”“别回门。”“可以。”这类孤立口令或状态播报；可改成“你们先往前走”“行，我来开维护气闸”“沿这条手动轨道继续推”“先别回那扇门”“可以，我只开维护项”。',
+    '对话承接词要看上下文：所以、但是、那、行、嗯、好、现在、先、再、就这类词只在回应上一句话、现场动作或明确选择时使用。不要为了顺滑硬塞连接词；如果上下文不是因果、转折或让步，就改成动作、称呼、具体对象或直接回答。',
+    '对话正向动作优先：连续“别A、不要B、不C”会像规则清单；角色下命令时优先说下一步要做什么，再补哪些风险暂时别碰。例如“别看背面。别补签。”可改成“先把卡片扣回去，背面和补签项都别碰”；“不读取关联对象，不打开主档案”可改成“确认范围只限维修气闸，关联对象和主档案先锁住”。',
+    '状态句要接用途：单独的“可以、行、明白、稳了、不稳、够、不够、有、没有”通常要接一句用途、条件或动作。只有强情绪、打断、确认口令或角色故意冷处理时才单独成句；否则写成“可以，但只够撑十秒”“明白，我让他们先别推”“不稳，先别让伤员贴近叶片”。',
     '台词因果一致性：台词里的状态、判断、命令和代价要互相咬合。若先说风险，后面的安排应回应这个风险；若前后命令看似冲突，要写成主次、条件或取舍关系。不要为了连接而硬塞“因为/所以/但是”，可以用停顿、改口、动作打断、半句让步或省略来保持真人口吻。',
     '句子自然承接：无论题材和场景，台词、判断、动作句通常应顺着人物当下的处境、注意力、情绪和选择自然长出来，让读者能隐约读出它和前后文的关系。普通短句、停顿、情绪反应可以留白，不必每句解释因果；但如果一句话读起来像孤立标签、任务条目、抽象口号、突兀判断或断开的命令，就优先补一个具体对象、动作目的、身体反应、风险代价、条件关系或轻微转折。不要靠堆“因为/所以/但是”制造假顺滑。',
     '短句留白资格：短句、断行和留白只在强情绪停顿、危险瞬间、角色不敢说完、重大发现落点、对话打断或章末钩子处少量使用。普通观察、否定判断、位置判断、动作安排、信息确认、声音/重量/速度描述，不要拆成连续孤立短句。像“没有A。也没有B。”“不A。不B。不C。”这类句群默认不写；除非几十章里遇到一次真正需要断裂感的强节点，否则合并成一句自然表达，或接入动作、感受、风险和下一步判断。短句不是默认真人感，连续短句过多会显得僵硬和分镜化。',
@@ -2667,6 +2673,13 @@ function stripDialogueText(text = '') {
   return normalizeText(text).replace(/“[^”]{0,260}”/g, '');
 }
 
+function getNonDialogueMatches(text = '', regex) {
+  const normalized = normalizeText(text);
+  const dialogueRanges = [...normalized.matchAll(/“[^”]{0,260}”/g)].map((match) => ({ start: match.index || 0, end: (match.index || 0) + match[0].length }));
+  const isInsideDialogue = (index) => dialogueRanges.some((range) => index >= range.start && index < range.end);
+  return [...normalized.matchAll(regex)].filter((match) => !isInsideDialogue(match.index || 0));
+}
+
 function getMechanicalNegationMatches(text = '') {
   const nonDialogueText = stripDialogueText(text);
   const matches = [];
@@ -2733,23 +2746,55 @@ function findTransitionBridgeIssues(text = '') {
 }
 
 function findDialogueIssues(content = '', card = {}) {
-  if (!isHighDialogueChapter(card)) return [];
   const text = normalizeText(content);
   const issues = [];
-  const dialogueCount = (text.match(/“[^”]{1,240}”/g) || []).length;
+  const dialogueMatches = [...text.matchAll(/“([^”]{1,240})”/g)];
+  const dialogueCount = dialogueMatches.length;
+  const highDialogueChapter = isHighDialogueChapter(card);
+  if (!highDialogueChapter) return [];
   if (dialogueCount < 8) {
     issues.push({ type: 'dialogue-too-sparse', label: '高对话章节对话不足', text: `对话段数量：${dialogueCount}` });
   }
 
-  const dialogueText = (text.match(/“[^”]{1,240}”/g) || []).join('\n');
+  const dialogueText = dialogueMatches.map((match) => match[0]).join('\n');
   const explainCount = (dialogueText.match(/因为|所以|也就是说|换句话说|这意味着|你应该明白|我解释一下|简单来说/g) || []).length;
-  if (dialogueCount >= 8 && explainCount >= Math.ceil(dialogueCount * 0.45)) {
+  if (highDialogueChapter && dialogueCount >= 8 && explainCount >= Math.ceil(dialogueCount * 0.45)) {
     issues.push({ type: 'dialogue-over-explains', label: '对话解释设定过多', text: `解释型对话标记：${explainCount}/${dialogueCount}` });
   }
 
   const interruptionCount = (text.match(/没说完|打断|沉默|停了|顿了|避开|没接|没回答|改口|咽回去|答非所问|看向|低头|移开视线/g) || []).length;
-  if (dialogueCount >= 8 && interruptionCount < 3) {
+  if (highDialogueChapter && dialogueCount >= 8 && interruptionCount < 3) {
     issues.push({ type: 'dialogue-too-aligned', label: '对话过度信息对齐', text: `错位/打断/动作标记：${interruptionCount}` });
+  }
+
+  const shortCommandRegex = /^(?:快|走|跑|撤|退|停|上|下|开|关|推|拉|剪|切|放|拿|收|跟上|继续(?:走|推|撤|退)?|别(?:回|碰|动|看|开|关|剪|拿|推|拉)[^，。！？,.!?]{0,4})[。！？.!?]*$/;
+  const bareStatusRegex = /^(?:行|可以|好|嗯|明白|收到|稳了|不稳|够|不够|有|没有)[。！？.!?]*$/;
+  const orphanConnectorRegex = /^(?:所以|但是|可是|那|现在|先|再|然后|就这样)[，,。！？.!?]*$/;
+  const negativeCommandChainRegex = /(?:^|[。！？.!?]\s*)(?:别|不要|不)[^。！？.!?]{1,14}[。！？.!?]\s*(?:别|不要|不)[^。！？.!?]{1,14}[。！？.!?]/;
+  const candidates = [];
+  const addDialogueIssue = (type, label, match) => {
+    if (issues.filter((issue) => issue.type === type).length >= 3) return;
+    issues.push({ type, label, index: match.index || 0, text: match[0] });
+  };
+  dialogueMatches.forEach((match) => {
+    const raw = match[1] || '';
+    const spoken = normalizeText(raw).replace(/[“”"'‘’]/g, '').trim();
+    if (!spoken) return;
+    if (shortCommandRegex.test(spoken)) candidates.push({ type: 'dialogue-fragment-command', label: '台词半截命令缺少对象/方向', match });
+    if (bareStatusRegex.test(spoken)) candidates.push({ type: 'dialogue-bare-status', label: '台词裸状态句缺少用途', match });
+    if (orphanConnectorRegex.test(spoken)) candidates.push({ type: 'dialogue-orphan-connector', label: '台词孤立承接词缺少上下文承接', match });
+    if (negativeCommandChainRegex.test(spoken)) addDialogueIssue('dialogue-negative-command-chain', '台词连续否定命令像规则清单', match);
+  });
+
+  const candidateTypes = candidates.reduce((acc, item) => {
+    acc[item.type] = (acc[item.type] || 0) + 1;
+    return acc;
+  }, {});
+  const totalSoftCandidateCount = candidates.length;
+  if (totalSoftCandidateCount >= 3) {
+    candidates.forEach(({ type, label, match }) => {
+      if ((candidateTypes[type] || 0) >= 2 || totalSoftCandidateCount >= 3) addDialogueIssue(type, label, match);
+    });
   }
 
   return issues;
@@ -2789,6 +2834,8 @@ function findNaturalnessIssues(content = '') {
   const isNaturalNegativeSentence = (sentence = '') => /^(?:我|你|他|她|魏杰|灰喉|博士|本虫)?(?:真|也|可)?(?:不是)(?:故意的|战斗型|博士|敌人|威胁|问题|梦|噩梦|错觉|人类的手|人类的语言|他的|她的|我的|普通的|普通反射|系统|陷阱|玩具|空的|新的|坏的|一个人|第一次|关键)$/.test(normalizeText(sentence).replace(/[“”"'‘’]/g, '').trim());
   const patterns = [
     { type: 'negative-reveal', regex: /不是[^。！？\n]{1,28}[，,、]?\s*也不是[^。！？\n]{1,28}[—-]{1,2}\s*(?:是|就是)?[^。！？\n]{1,60}/g, label: '否定排除式揭示句' },
+    { type: 'negative-negative-explain', nonDialogueOnly: true, regex: /(?:不再是|不是)[^。！？\n]{1,36}(?:[，,、]\s*)?也不是[^。！？\n]{1,36}[。！？]\s*(?:它|他|她|这|那)?(?:变成|成了|变为|成|就是|意味着|说明|代表)[^。！？\n]{1,80}/g, label: '否定否定后解释升格句' },
+    { type: 'negative-negative-affirm', nonDialogueOnly: true, regex: /(?:不再是|不是)[^。！？\n]{1,36}(?:[，,、]\s*)?也不是[^。！？\n]{1,36}[，,、]?\s*(?:而是|就是|只是|变成|成了|说明|意味着|代表|带出来的)[^。！？\n]{1,80}/g, label: '否定否定肯定转折句' },
     { type: 'negative-paired-contrast', regex: /不是[^。！？\n]{1,36}[，,、]\s*也不是[^。！？\n]{1,36}[。！？]/g, label: '不是/也不是成对否定句' },
     { type: 'negative-comma-triple', regex: /不是[^。！？\n]{1,24}[，,、]\s*不是[^。！？\n]{1,24}[，,、]\s*(?:是|就是)[^。！？\n]{1,60}/g, label: '逗号分隔的否定排除句' },
     { type: 'negative-triple', regex: /不是[^。！？\n]{1,20}[。！？]\s*不是[^。！？\n]{1,20}[。！？]\s*(?:是|就是)[^。！？\n]{1,60}[。！？]/g, label: '短句排比式否定揭示' },
@@ -2805,13 +2852,15 @@ function findNaturalnessIssues(content = '') {
     { type: 'dash-explain-judgement', regex: /[—-]{1,2}\s*(?:是|说明|意味着|代表|像是|更像)[^。！？\n]{1,60}/g, label: '破折号解释判断' },
     { type: 'auditory-overclaim', regex: /(?:皮靴|军靴|高跟鞋|作战靴)[^。！？\n]{0,24}(?:声音|响|声响|动静)|(?:声音|响|声响|动静)[^。！？\n]{0,24}(?:皮靴|军靴|高跟鞋|作战靴)/g, label: '听觉越权判断' },
     { type: 'noun-fragment-sentence', regex: /(?:^|[。！？!?\n])\s*[^，。！？!?\n]{0,16}(?:声音|闷响|光线|气味|轮廓|触感|动静)[，,](?:连着|从|在|很|越来越|一下|一阵)[^。！？!?\n]{2,40}[。！？!?]/g, label: '名词碎句' },
+    { type: 'triple-noun-enumeration', nonDialogueOnly: true, regex: /一[条块个枚根段只扇片张道处][^，。！？\n]{2,22}[，,、]\s*一[条块个枚根段只扇片张道处][^，。！？\n]{2,22}[，,、]\s*一[条块个枚根段只扇片张道处][^。！？\n]{2,36}/g, label: '三项名词排比升格' },
     { type: 'isolated-label-sentence', regex: /(?:^|[。！？!?\n])\s*(暗门|没地方躲|风险中|安全了|有人|脚步声|金属声|血|出口|死路|机会|问题不大|来不及了)[。！？!?]/g, label: '孤立标签短句' },
     { type: 'markdown-noise', regex: /\*\*|__|```|^\s*#{2,6}\s+|^\s*---\s*$/gm, label: 'Markdown 排版痕迹' },
     { type: 'template-hook', regex: /真正的危险才刚刚开始|事情远没有结束|他不知道的是|她不知道的是|一切才刚刚开始/g, label: '模板章末钩子' },
   ];
 
   patterns.forEach((pattern) => {
-    for (const match of text.matchAll(pattern.regex)) {
+    const matches = pattern.nonDialogueOnly ? getNonDialogueMatches(text, pattern.regex) : [...text.matchAll(pattern.regex)];
+    for (const match of matches) {
       if (pattern.type === 'empty-comma-reveal' && /^没有(?:回头|停下|说话|回答|看|问|动|解释|接话|立刻)/.test(match[0])) continue;
       if (pattern.type === 'negative-comma-reveal' && /^不是(?:笑|哭|生气|害怕|嘲讽|威胁|命令|请求)[，,]/.test(match[0].trim())) continue;
       if (pattern.type === 'negative-standalone-judgement' && /^不是(?:笑|哭|生气|害怕|嘲讽|威胁|命令|请求)[，,]/.test(match[0].trim())) continue;
@@ -3498,6 +3547,8 @@ async function repairNaturalnessLocallyWithAi({ apiKey, model, baseUrl, project,
     '5h. 如果片段是解释性判断，只改命中的句子：让物件、声音、动作或人物停顿直接给出结果；自然的“没有回头/没有停下/没有系统提示”可以保留。',
     '5h-1. 如果同类解释判断密度过高，优先改成“现场证据 → 人物动作 → 选择变化”，不要新增解释段。',
     '5h-2. 调查线索章的改法：保留一个异常点，让它直接导致触摸、收起、绕路、停下或进入；不要写鉴定报告。示例：“不是风吹倒的，是被外力拉倒的”改成“插孔边缘有新撬出的白茬，他收起牌子，沿倒塌方向看过去”。',
+    '5h-3. 如果片段是“不是A，也不是B，而是/就是C”“不再是A，也不是B。它变成C”“这意味着/说明/代表C”这类旁白解释升格，不要同义替换。改成：一个具体痕迹或物件细节 → 角色停顿/触摸/收起/避开 → 下一步动作。意义让读者从动作里读出来。',
+    '5h-4. 如果片段是“一条A，一块B，一个C”三项名词排比，只保留最影响当前动作的一项；其余信息并入视线扫过、手指摸到、物件卡住、角色改变路线等动作，或者删掉。',
     '5i. 如果片段是细节维度过载，只保留主干 + 一个有效异常点。调查物件只保留功能信息或异常信息，不同时展开位置、材质、颜色、新旧、比喻和判断。',
     '5j. 如果问题是关键异常后缺少反应桥、人物反应与行动转折生硬、动作转折缺少最小动机：只补1-3句轻桥接。必须让“上一事件 → 一个反应/验证 → 下一动作”自然连上。优先用脚步停半拍、视线停住、转动设备、伸手触碰、短问一句、调整背包/路线等动作，不要用旁白解释“因为信任/因为时间紧”。',
     '5j-1. “没问/没有解释/点头/继续走”可以保留，但不能孤立承担剧情转折；若它们出现在关键异常后，必须前后加一个可感知动作或验证结果。',
@@ -5351,7 +5402,9 @@ async function assembleNarrativeBeatChapter({ apiKey, model, baseUrl, project, a
 function translateIssuesToRevisionActions(issues = []) {
   const actions = new Set();
   issues.forEach((issue) => {
-    if (/negative-judgement-density|plain-negative-density|negative-standalone|negative-paired-contrast|empty-comma|negative-comma/.test(issue.type)) actions.add('逐句处理“不是/没有”密度：保留台词里的自然反驳和人物嘴硬；删掉或改写非台词里连续承担辨认/解释的“不是/没有”。“不是A，也不是B”“第一反应不是A，也不是B”“没有A。也没有B。”“不A。不B。”这类句式按几十章才偶尔一次处理，除非是身份确认、重大反转、死亡确认或人物崩溃，否则改成现场证据、动作结果、人物停顿、物件反馈或下一步选择。');
+    if (/negative-judgement-density|plain-negative-density|negative-standalone|negative-paired-contrast|negative-negative|empty-comma|negative-comma/.test(issue.type)) actions.add('逐句处理“不是/没有”密度：保留台词里的自然反驳和人物嘴硬；删掉或改写非台词里连续承担辨认/解释的“不是/没有”。“不是A，也不是B”“第一反应不是A，也不是B”“没有A。也没有B。”“不A。不B。”这类句式按几十章才偶尔一次处理，除非是身份确认、重大反转、死亡确认或人物崩溃，否则改成现场证据、动作结果、人物停顿、物件反馈或下一步选择。');
+    if (/negative-negative-explain|negative-negative-affirm/.test(issue.type)) actions.add('把“否定、否定、再解释/升格/转折”的作者判断改掉：不要写“它不再是A，也不是B。它变成了C”或“不是A，也不是B，就是C”。优先让角色看到一个具体痕迹、摸到一个物件、停顿一下、改变动作或做出下一步选择；意义让读者从动作里读出来。');
+    if (issue.type === 'triple-noun-enumeration') actions.add('压掉三项名词排比：不要用“一条A，一块B，一个C”替读者升格意义。保留最能改变当前行动的一项，其他信息并入动作、视线或物件反馈，或者直接删掉。');
     if (/negative|negation|plain-negative/.test(issue.type)) actions.add('把辨认结果改成证据顺序：先出现可见/可听证据，再写人物停顿、验证或改变动作；不要用排除式判断承接信息。');
     if (/perception|camera-like|cognition|orphaned-body/.test(issue.type)) actions.add('所有外部信息先过人物感知：补上看见、听见、感觉到、发现或意识到；删掉摄像机报景和人物当下不可能知道的信息。');
     if (/rhythm|fragment|staccato|negative-reveal-chain/.test(issue.type)) actions.add('把碎句链合并成动作-感知-反应-选择的自然段；保留一个关键短句即可，不要连续名词碎句、判断碎句或“不是A。是B。”揭示。');
@@ -5362,6 +5415,7 @@ function translateIssuesToRevisionActions(issues = []) {
     if (/sentence-chain|isolated-label/.test(issue.type)) actions.add('把连续短判断句合成带动作因果的自然段：动作、感知、停顿、选择连在一起，不一行一个结论。');
     if (/comma-stacked|detail|inventory|dossier|scene-asset|parallel/.test(issue.type)) actions.add('拆开承载过多的长句，每句只保留一个动作或一个有效细节；环境和道具只保留会改变动作的部分。');
     if (/missing-reaction|stiff-transition/.test(issue.type)) actions.add('关键异常后补一个轻反应桥：人物停顿、看向某物、压低声音、改握物件或改变路线，再进入下一步。');
+    if (/dialogue-fragment-command|dialogue-bare-status|dialogue-orphan-connector|dialogue-negative-command-chain/.test(issue.type)) actions.add('修台词时补最小必要成分：半截命令补对象、方向或下一步；“行/可以/明白/不稳”等状态句接用途、条件或动作；孤立“所以/但是/那/现在”只有真有上下文承接才保留；连续“别A/不要B/不C”改成“先做什么 + 哪些风险暂时别碰/谁负责看住”。');
     if (/dialogue/.test(issue.type)) actions.add('台词只推动当场关系或选择，不让两个人把同一组信息对齐说明。');
   });
   return [...actions].join('\n');
@@ -5865,6 +5919,8 @@ async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, pr
     '2. 动作因果清楚：看见问题、判断代价、安排动作要连上；关键受阻和转折处补足必要过渡、身体反馈或环境后果。',
     '3. 角色口吻服务关系：人物按当下处境、关系、目的、信息差和身体状态说话；短句可以有，但不要像清单报告。',
     '3b. 必要成分补足：短句可以急促，但只要补出主语、对象、动作方向、退回路径、下一步安排能让句子更自然，就优先补出来。停止、撤离、别碰、剪断、固定、打开、关闭、放弃、转移这类关键动作要说清“谁做/做什么/别动哪样东西/往哪里退/下一步处理什么”。连续“不A、不B、别C”优先改成“先做什么 + 哪些动作暂停/谁负责看住风险”。',
+    '3c. 对话流畅度：台词少主语、谓语、对象、方向、条件或承接词会让读者回推时，优先补足。不要长期写成“快。”“行。”“继续走。”“别回门。”“可以。”这类孤立口令或状态播报；可改成“你们先往前走”“行，我来开维护气闸”“沿这条手动轨道继续推”“先别回那扇门”“可以，我只开维护项”。',
+    '3d. 连接词贴上下文：所以、但是、那、行、嗯、好、现在、先、再、就这类词只在回应上一句话、现场动作或明确选择时使用；上下文不是因果、转折或让步时，改成动作、称呼、具体对象或直接回答。单独的“可以、行、明白、稳了、不稳、够、不够、有、没有”通常要接用途、条件或动作。',
     '4. 短句有资格：短句、断行和留白只用于强情绪、危险瞬间、对话打断、重大发现或章末钩子；普通观察、否定判断、位置判断、动作安排和信息确认写成自然句。',
     '5. 否定对照极低频：“不是A，也不是B”“没有A。也没有B。”“不A。不B。”这类句式默认几十章才偶尔保留一次；普通段落改成动作、停顿、物件反馈或下一步选择。',
     '6. 吐槽低于人设和行动：调侃、梗和夸张比喻只有在遮掩害怕、暴露误判、缓冲关系或推动行动时才短促出现；高压救人、撤离、伤情恶化和敌人逼近时优先写行动。',
@@ -7348,6 +7404,8 @@ app.post('/api/projects/:id/automation/generate-current/stream', auth, async (re
       '2. 动作因果清楚：看见问题、判断代价、安排动作要连上；关键受阻和转折处补足必要过渡、身体反馈或环境后果。',
       '3. 角色口吻服务关系：人物按当下处境、关系、目的、信息差和身体状态说话；短句可以有，但不要像清单报告。',
       '3b. 必要成分补足：短句可以急促，但只要补出主语、对象、动作方向、退回路径、下一步安排能让句子更自然，就优先补出来。连续“不A、不B、别C”优先改成“先做什么 + 哪些动作暂停/谁负责看住风险”。',
+      '3c. 对话流畅度：台词少主语、谓语、对象、方向、条件或承接词会让读者回推时，优先补足。不要长期写成“快。”“行。”“继续走。”“别回门。”“可以。”这类孤立口令或状态播报；可改成“你们先往前走”“行，我来开维护气闸”“沿这条手动轨道继续推”“先别回那扇门”“可以，我只开维护项”。',
+      '3d. 连接词贴上下文：所以、但是、那、行、嗯、好、现在、先、再、就这类词只在回应上一句话、现场动作或明确选择时使用；上下文不是因果、转折或让步时，改成动作、称呼、具体对象或直接回答。单独的“可以、行、明白、稳了、不稳、够、不够、有、没有”通常要接用途、条件或动作。',
       '4. 短句有资格：短句、断行和留白只用于强情绪、危险瞬间、对话打断、重大发现或章末钩子；普通观察、否定判断、位置判断、动作安排和信息确认写成自然句。',
       '5. 否定对照极低频：“不是A，也不是B”“没有A。也没有B。”“不A。不B。”这类句式默认几十章才偶尔保留一次；普通段落改成动作、停顿、物件反馈或下一步选择。',
       '6. 吐槽低于人设和行动：调侃、梗和夸张比喻只有在遮掩害怕、暴露误判、缓冲关系或推动行动时才短促出现；高压救人、撤离、伤情恶化和敌人逼近时优先写行动。',
