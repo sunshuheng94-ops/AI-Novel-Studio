@@ -565,7 +565,13 @@ function buildAiMessages(systemPrompt, userPrompt) {
 
 function getRequestAbortSignal(req) {
   const controller = new AbortController();
-  req.on('aborted', () => controller.abort());
+  const abort = () => {
+    if (!controller.signal.aborted) controller.abort(new Error('AI 请求已中断'));
+  };
+  req.on('aborted', abort);
+  req.res?.on?.('close', () => {
+    if (!req.res?.writableEnded) abort();
+  });
   return controller.signal;
 }
 
@@ -675,6 +681,89 @@ async function callDeepSeek({ apiKey, baseUrl = 'https://api.deepseek.com', mode
   recordAiUsage(result?.usage || {});
 
   return result?.choices?.[0]?.message?.content || '';
+}
+
+async function callDeepSeekStream({ apiKey, baseUrl = 'https://api.deepseek.com', model = 'deepseek-v4-flash', temperature = 0.9, systemPrompt, userPrompt, maxTokens = 8192, signal, timeoutMs = 180000, onToken }) {
+  const effectiveMaxTokens = model === 'gpt-5.5' ? Math.min(maxTokens, 4096) : maxTokens;
+  const timeout = createTimeoutSignal(timeoutMs, `AI 请求超时（${Math.round(timeoutMs / 1000)}秒）：${model}`);
+  const combined = combineAbortSignals(signal, timeout.signal);
+  let response;
+  try {
+    response = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, temperature, max_tokens: effectiveMaxTokens, stream: true, messages: buildAiMessages(systemPrompt, userPrompt) }),
+      signal: combined.signal,
+    });
+  } catch (error) {
+    combined.cleanup();
+    timeout.cleanup();
+    const reason = combined.signal?.reason || error;
+    if (reason?.name === 'TimeoutError') throw new Error(reason.message || 'AI 请求超时，请稍后重试或切换模型');
+    if (error?.name === 'AbortError') throw new Error('AI 请求已中断');
+    throw new Error(`DeepSeek 流式网络请求失败：${error instanceof Error ? error.message : 'fetch failed'}`);
+  }
+
+  if (!response.ok) {
+    try {
+      const result = await response.json().catch(() => ({}));
+      const errorText = result?.error?.message || result?.message || JSON.stringify(result).slice(0, 500) || 'DeepSeek 请求失败';
+      throw new Error(`AI 请求失败（HTTP ${response.status}）：${errorText}`);
+    } finally {
+      combined.cleanup();
+      timeout.cleanup();
+    }
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    combined.cleanup();
+    timeout.cleanup();
+    throw new Error('当前模型接口未返回可读取的流');
+  }
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullText = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const data = trimmed.slice(5).trim();
+        if (!data || data === '[DONE]') continue;
+        const parsed = JSON.parse(data);
+        const token = parsed?.choices?.[0]?.delta?.content || '';
+        if (token) {
+          fullText += token;
+          onToken?.(token);
+        }
+        recordAiUsage(parsed?.usage || {});
+      }
+    }
+  } catch (error) {
+    const reason = combined.signal?.reason || error;
+    if (reason?.name === 'TimeoutError') throw new Error(reason.message || 'AI 请求超时，请稍后重试或切换模型');
+    if (error?.name === 'AbortError') throw new Error('AI 请求已中断');
+    throw error;
+  } finally {
+    reader.releaseLock?.();
+    combined.cleanup();
+    timeout.cleanup();
+  }
+  return fullText;
+}
+
+function startNdjsonStream(res) {
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+  return (event) => res.write(`${JSON.stringify(event)}\n`);
 }
 
 function countWords(text = '') {
@@ -1447,6 +1536,7 @@ function buildChapterCardControlGuide() {
     '2. 不要输出开头方式、叙事手法、对话密度、叙述质感、人味锚点、正文禁区、段落节奏、平台写法等写作控制字段。',
     '3. 写法由真人写作模块在正文生成前临时决定，章节卡不要像控制参数表。',
     '4. 每张卡必须具体，但只具体到剧情事件和交付结果，不要规定正文该怎么写。',
+    '5. 章节卡只写剧情轨道，不规定正文口吻。可提示本章适合保留的角色压力、关系变化或系统规则，但不要要求每章固定出现吐槽、系统短讯、同人梗或史诗句。',
   ].join('\n');
 }
 
@@ -1561,8 +1651,8 @@ function buildAuthorPersonaPrompt({ project, inspiration, minimumWords, targetCh
     `灵感：${inspiration}`,
     '要求：',
     '1. 要从灵感反推最适合这本书的叙述人格，不要套模板。',
-    '2. 作者人设必须有“口语、碎、随意、矛盾、藏”的使用倾向，且明确禁止“工整、干净、模板、标准、顺滑”的写法倾向。',
-    '3. 作者人设要能帮助这本书降低 AI 味，提升自然感、留白感和阅读流动性。',
+    '2. 作者人设应追求自然口语和人物反应的真实，不追求刻意碎句。可以有停顿、回避和留白，但普通观察、动作安排、信息确认要顺着人物处境自然写清。禁止模板化、口号化、过度工整，不禁止正常顺滑。',
+    '3. 作者人设要能帮助这本书降低 AI 味，提升自然感、人物现场感和阅读流动性；不要把“碎”“断”“不顺滑”当成正向目标。',
     '4. 系统提示风格要说明是更偏完整面板、短讯、还是混合，并写出适合这本书的节奏。',
     '5. 直接输出，不要解释。',
   ].join('\n');
@@ -1572,7 +1662,7 @@ function buildAuthorPersonaGuide(persona = '') {
   const text = normalizeText(persona).trim();
   return [
     '作者人设卡：',
-    text || '暂无作者人设，按灵感和章节卡自由生成，但要保持口语、碎、随意、矛盾、藏的倾向，避免工整、干净、模板、标准、顺滑。',
+    text || '暂无作者人设，按灵感和章节卡自由生成；追求自然口语、人物现场反应和必要留白，但普通观察、动作安排、信息确认要顺着处境写清。避免模板化、口号化和过度工整，不禁止正常顺滑。',
   ].join('\n');
 }
 
@@ -1786,17 +1876,22 @@ function buildParagraphWeavePlan({ project = {}, storyContext = {}, card = {}, c
     : mode.primary === 'investigation'
       ? ['触碰线索：人物碰到一个物件，只得出一个可行动结果。', '复核偏差：主角验证刚才的判断，发现路线或关系变窄。']
       : ['行动受阻：尝试推进当前目标，现场给出阻碍。', '短暂缓冲：身体不适、嘴硬或一句短吐槽，让人物像活人。'];
+  const optionalCards = [
+    '困境牌：一个感官/动作压力 + 人物即时反应；只让读者知道当前麻烦。',
+    '错误行动牌：主角按经验处理，现场反馈让他调整。',
+    middle[0],
+    middle[1],
+    wantsHumor ? '口吻牌：如果场景允许，用一句短促自嘲、嘴硬或回避暴露性格；不允许就省略。' : '反应牌：人物用动作、停顿、沉默或回避暴露情绪。',
+    wantsEpic ? '压场牌：废墟/战争/阵营压力只贴着当前动作出现。' : '推进牌：拿到一个结果，代价或新问题随之出现。',
+    '选择牌：人物在两个不完整选项之间做决定。',
+    '钩子牌：停在具体动作、声音、物件变化、路线选择或一句未说完的话前。',
+  ];
   return [
-    '【段落编织计划】',
+    '【段落功能牌组】',
     `第${chapterNumber}章只写一个主场景链，换场必须由人物选择或危险逼出来。`,
-    '1. 困境段：一个感官/动作压力 + 人物即时反应；只让读者知道当前麻烦。',
-    '2. 错误行动段：主角按经验处理，现场反馈让他调整。',
-    `3. ${middle[0]}`,
-    `4. ${middle[1]}`,
-    wantsHumor ? '5. 口吻段：一句短促自嘲或嘴硬，立刻回到危险。' : '5. 反应段：人物用动作、停顿或回避暴露情绪。',
-    wantsEpic ? '6. 压场段：废墟/战争/阵营压力只贴着当前动作出现。' : '6. 推进段：拿到一个结果，代价或新问题随之出现。',
-    '7. 选择段：人物在两个不完整选项之间做决定。',
-    '8. 钩子段：停在具体动作、声音、物件变化、路线选择或一句未说完的话前。',
+    '本章可从下列段落功能中选3-5种，不必按顺序，不必全部使用；优先让人物处境自然推动段落变化。',
+    ...optionalCards.map((item) => `- ${item}`),
+    '不要按牌组顺序机械排段；如果一段同时完成动作、信息和关系变化，就让它自然合并。',
     '句子承载：每句只服务一个动作或一个判断；细节跟着动作出现，系统短讯只改变下一步选择。',
   ].join('\n');
 }
@@ -1815,7 +1910,7 @@ function buildHumanWritingEnginePrompt({ project = {}, automation = {}, card = {
     buildVoiceRosterGuide({ project, card: cleanCard }),
     buildAuthorPersonaGuide(automation.authorPersona),
     '【自然读感偏好】',
-    '对照式强调默认少用。只有身份确认、世界真实感落地、重大反转等节点，才保留一处强对照；普通段落优先用触感、重量、气味、疼痛、声音、动作受阻、人物迟疑或代价来写真实感，不频繁写“不是A，不是B，而是C”“不像A，也不像B”“比起A，更像B”。',
+    '否定对照句式极低频：像“第一反应不是A，也不是B”“没有A。也没有B。”“不A。不B。”“不是A，不是B，而是C”“不像A，也不像B”这类句式，默认几十章才偶尔保留一次，且只在身份确认、重大反转、死亡确认、人物崩溃、误判被现实打脸等节点使用。普通段落不要用它制造真实感、悬念或口吻，优先改成动作、停顿、触感、声音、物件反馈、人物迟疑或下一步选择。',
     '环境描写优先服务行动。可以有氛围和比喻，但通常每个环境段只保留一个最有效的强细节；其余信息通过人物呼吸、视线受阻、脚下打滑、伤口被牵动、路线改变、掩体可用、敌人位置暴露或物件可利用带出。',
     '吐槽和比喻优先少而准：同一段通常只保留一句吐槽或一个比喻；比喻必须和前后动作逻辑一致，不能前半句像一个东西、后半句又跳到完全不搭的效果。危险、追逐、受伤、求援段宁可少吐槽，优先把选择和后果写清楚。',
     '主角不能像抽象梗复述机器。默认先写正常人的第一反应：怕、疼、犹豫、判断、护人、误判、改动作；吐槽、梗和夸张比喻只作为少量点缀，通常出现在动作受阻、现实打脸、关系尴尬或危险稍有空隙时。连续两段都靠吐槽收尾时，删掉后一处或改成动作、沉默、身体反应。',
@@ -1831,16 +1926,17 @@ function buildHumanWritingEnginePrompt({ project = {}, automation = {}, card = {
     '对话逻辑桥：汇报、远程通信、撤离安排、战斗指挥、价值判断这类台词，不要写成“能。状态。风险。我会处理。”的报告清单。角色可以说短句，但要按真人说话补出最小连接：转折、因果、让步、犹豫、改口或动作停顿，让“现在怎样 → 所以怎么办 → 为什么这么选”自然连上。',
     '台词因果一致性：台词里的状态、判断、命令和代价要互相咬合。若先说风险，后面的安排应回应这个风险；若前后命令看似冲突，要写成主次、条件或取舍关系。不要为了连接而硬塞“因为/所以/但是”，可以用停顿、改口、动作打断、半句让步或省略来保持真人口吻。',
     '句子自然承接：无论题材和场景，台词、判断、动作句通常应顺着人物当下的处境、注意力、情绪和选择自然长出来，让读者能隐约读出它和前后文的关系。普通短句、停顿、情绪反应可以留白，不必每句解释因果；但如果一句话读起来像孤立标签、任务条目、抽象口号、突兀判断或断开的命令，就优先补一个具体对象、动作目的、身体反应、风险代价、条件关系或轻微转折。不要靠堆“因为/所以/但是”制造假顺滑。',
-    '短句留白资格：短句、断行和留白只在强情绪停顿、危险瞬间、角色不敢说完、重大发现落点、对话打断或章末钩子处少量使用。普通观察、否定判断、位置判断、动作安排、信息确认、声音/重量/速度描述，不要拆成连续孤立短句。像“没有A。也没有B。”“不A。不B。不C。”“很慢。很重。”这类句群，通常合并成一句自然表达，或接入动作、感受、风险和下一步判断。短句不是默认真人感，连续短句过多会显得僵硬和分镜化。',
-    '碎片判断合并：连续出现“没有/也没有/不/不再/不能/很/太像/更像”等开头的短句时，除非是死亡确认、重大反转、人物崩溃或台词打断，否则优先合并为一两句自然判断，并让它接到人物反应或下一步动作上。合并时不要改剧情，只把普通信息从诗行式分镜拉回正常叙述。',
-    '省略句可读性：角色可以急、可以省字，但关键名词或动作对象不能省到让读者停顿反应。涉及剂量、开关、门、锁、路线、药物、通讯、伤员、物资、权限时，短句通常至少保留“处理什么/怎么处理”的一个锚点，例如“剂量你来掐”“先挪到门口”，不要只写“掐”“不开深处”这类需要读者回推的半截指令。',
+    '短句留白资格：短句、断行和留白只在强情绪停顿、危险瞬间、角色不敢说完、重大发现落点、对话打断或章末钩子处少量使用。普通观察、否定判断、位置判断、动作安排、信息确认、声音/重量/速度描述，不要拆成连续孤立短句。像“没有A。也没有B。”“不A。不B。不C。”这类句群默认不写；除非几十章里遇到一次真正需要断裂感的强节点，否则合并成一句自然表达，或接入动作、感受、风险和下一步判断。短句不是默认真人感，连续短句过多会显得僵硬和分镜化。',
+    '碎片判断合并：连续出现“没有/也没有/不/不再/不能/不是/也不是”等开头的判断时，除非是死亡确认、重大反转、人物崩溃或台词打断，否则优先合并为一两句自然判断，并让它接到人物反应或下一步动作上。不要把“不是A，也不是B”当作常用开场反应、身份辨析或悬念句式。合并时不要改剧情，只把普通信息从诗行式分镜拉回正常叙述。',
+    '必要成分补足：角色可以急、可以省字，但只要补出主语、对象、动作方向、退回路径、下一步安排能让句子更自然，就优先补出来。涉及停止、撤离、别碰、剪断、固定、打开、关闭、放弃、转移、剂量、路线、通讯、伤员、物资、权限等关键动作时，通常要让读者一眼知道“谁做/做什么/别动哪样东西/往哪里退/下一步处理什么”。急促感来自语气、动作和打断，不来自省掉必要名词。',
+    '正向安排优先：连续“不A、不B、别C”容易像规则清单；如果角色是在下命令或做决定，优先写成“先做什么 + 哪些动作暂停/谁负责看住风险”。例如“慢慢撤。别带动线，钳口先松开，沿原路退”可写成“慢慢撤，钳口先松开，别带动那根线，我们沿原路退回去”；“不剪，不取布条，也别再碰门禁片残片”可写成“先把线固定住，布条和门禁片残片都暂时别动”。',
     '取舍句自然化：表达“少做A以避免B”“放弃物资保人命”“不确认某人以免牵连某人”时，要让代价和收益具体咬合。可以保留短促口吻，但最好带出牺牲的是什么、保住的是什么、为什么现在只能这么选；不要只写抽象价值口号。',
     '空间/设备指令边界：涉及门口、深处、侧门、通道、读卡槽、监测廊、隔离帘等位置和设备时，指令要让读者知道队伍移动到哪里、暂时不做什么、谁负责看哪里。短句可以用，但优先写成“先挪到门口，别急着往里开”“离门锁半米，先看地面”这类动作边界，而不是“到门口，不开深处”式压缩标签。',
     '三项抽象排比要克制：不要把人物处境连续写成“当A、当B、当C”或“会骗人、会骗人、也会骗人”。如果只是表达危险或工具化，只保留最贴当前上下文的一项，并让它接到动作或选择上。',
-    '强痛感比喻和“不是A，是B”句式要稀有：这类句子通常2-3章出现一次就够。普通疼痛优先写成“疼到动作变形/呼吸断掉/手松了一下/路线被迫改变”，不要每章都用烧红铁丝、血条、套餐式夸张比喻。',
+    '强痛感比喻和否定对照句式要稀有：像“不是A，是B”“不是A，也不是B”“没有A。也没有B。”“不A。不B。”这类句子通常几十章才偶尔出现一次。普通疼痛、普通判断和普通反应优先写成动作变形、呼吸断掉、手松了一下、路线被迫改变、人物停顿或物件反馈。',
     '移动和追逐场景不要像摄像机扫街：一段只写1-2个会影响路线、遮挡视线、暴露敌人或提供可利用物的细节。不要同时写右侧店铺、左侧楼体、前方外墙、铁栏杆、粉尘和吐槽；能不改变动作的细节直接省略。',
     '连续抽象判断要压缩：不要连续写“信息会骗人，标记会骗人，系统也只给半截提示”这类排比总结。优先换成一句现场结论，例如“这个标记被人动过，系统也没法替他判断真假”，然后立刻接人物验证或改路。',
-    '相邻章节句式避让：最近章节只用于承接事实、动作、伤势、关系和未解线索，不要模仿上一章的句式节奏。可以延续同一情绪或误会，但避免连续使用相同表达骨架，例如“不是A，也不是B，更像C”“好消息/坏消息”“这不是X，这是Y”。需要表达同一层意思时，优先换成动作、停顿、神态、物件反馈、台词含混或人物下一步选择。',
+    '相邻章节句式避让：最近章节只用于承接事实、动作、伤势、关系和未解线索，不要模仿上一章的句式节奏。可以延续同一情绪或误会，但避免连续使用相同表达骨架，尤其是“不是A，也不是B，更像C”“没有A。也没有B。”“不A。不B。”“好消息/坏消息”“这不是X，这是Y”。需要表达同一层意思时，优先换成动作、停顿、神态、物件反馈、台词含混或人物下一步选择。',
     '【故事上下文】',
     `作品承诺：${storyContext.projectPromise}`,
     `当前阶段：${storyContext.currentStage}`,
@@ -2693,6 +2789,7 @@ function findNaturalnessIssues(content = '') {
   const isNaturalNegativeSentence = (sentence = '') => /^(?:我|你|他|她|魏杰|灰喉|博士|本虫)?(?:真|也|可)?(?:不是)(?:故意的|战斗型|博士|敌人|威胁|问题|梦|噩梦|错觉|人类的手|人类的语言|他的|她的|我的|普通的|普通反射|系统|陷阱|玩具|空的|新的|坏的|一个人|第一次|关键)$/.test(normalizeText(sentence).replace(/[“”"'‘’]/g, '').trim());
   const patterns = [
     { type: 'negative-reveal', regex: /不是[^。！？\n]{1,28}[，,、]?\s*也不是[^。！？\n]{1,28}[—-]{1,2}\s*(?:是|就是)?[^。！？\n]{1,60}/g, label: '否定排除式揭示句' },
+    { type: 'negative-paired-contrast', regex: /不是[^。！？\n]{1,36}[，,、]\s*也不是[^。！？\n]{1,36}[。！？]/g, label: '不是/也不是成对否定句' },
     { type: 'negative-comma-triple', regex: /不是[^。！？\n]{1,24}[，,、]\s*不是[^。！？\n]{1,24}[，,、]\s*(?:是|就是)[^。！？\n]{1,60}/g, label: '逗号分隔的否定排除句' },
     { type: 'negative-triple', regex: /不是[^。！？\n]{1,20}[。！？]\s*不是[^。！？\n]{1,20}[。！？]\s*(?:是|就是)[^。！？\n]{1,60}[。！？]/g, label: '短句排比式否定揭示' },
     { type: 'negative-dash-reveal', regex: /不是[^。！？\n]{1,40}[—-]{1,2}\s*(?:是|就是)[^。！？\n]{1,60}/g, label: '破折号否定揭示' },
@@ -5254,11 +5351,12 @@ async function assembleNarrativeBeatChapter({ apiKey, model, baseUrl, project, a
 function translateIssuesToRevisionActions(issues = []) {
   const actions = new Set();
   issues.forEach((issue) => {
-    if (/negative-judgement-density|plain-negative-density|negative-standalone|empty-comma|negative-comma/.test(issue.type)) actions.add('逐句处理“不是/没有”密度：保留台词里的自然反驳和人物嘴硬；删掉或改写非台词里连续承担辨认/解释的“不是/没有”。改法：把其中至少一半改成现场证据、动作结果或人物下一步选择，例如“不是A，是B”改成“A的证据落空，人物转向B带来的动作”。');
+    if (/negative-judgement-density|plain-negative-density|negative-standalone|negative-paired-contrast|empty-comma|negative-comma/.test(issue.type)) actions.add('逐句处理“不是/没有”密度：保留台词里的自然反驳和人物嘴硬；删掉或改写非台词里连续承担辨认/解释的“不是/没有”。“不是A，也不是B”“第一反应不是A，也不是B”“没有A。也没有B。”“不A。不B。”这类句式按几十章才偶尔一次处理，除非是身份确认、重大反转、死亡确认或人物崩溃，否则改成现场证据、动作结果、人物停顿、物件反馈或下一步选择。');
     if (/negative|negation|plain-negative/.test(issue.type)) actions.add('把辨认结果改成证据顺序：先出现可见/可听证据，再写人物停顿、验证或改变动作；不要用排除式判断承接信息。');
     if (/perception|camera-like|cognition|orphaned-body/.test(issue.type)) actions.add('所有外部信息先过人物感知：补上看见、听见、感觉到、发现或意识到；删掉摄像机报景和人物当下不可能知道的信息。');
     if (/rhythm|fragment|staccato|negative-reveal-chain/.test(issue.type)) actions.add('把碎句链合并成动作-感知-反应-选择的自然段；保留一个关键短句即可，不要连续名词碎句、判断碎句或“不是A。是B。”揭示。');
     if (/absence-short-chain|negative-short-chain|adjective-short-chain/.test(issue.type)) actions.add('把普通观察、否定判断或形容词碎句合并成自然句：例如“没有A。也没有B。”改成“没有A，也没有B”；“不A。不B。不C。”改成一句带目的或反应的判断；“很慢。很重。”改成“拖得很慢，也很重”。除非是死亡确认、重大反转或人物崩溃，不要用断行短句制造留白。');
+    if (/isolated-label|sentence-chain|fragment/.test(issue.type)) actions.add('检查短句是否省掉让阅读自然的必要成分。只要补出主语、对象、动作方向、退回路径、下一步安排能让句子更顺，就优先补出来。停止、撤离、别碰、剪断、固定、打开、关闭、放弃、转移这类关键动作要保留“谁做/做什么/别动哪样东西/往哪里退/下一步处理什么”。连续“不A、不B、别C”改成“先做什么 + 哪些动作暂停/谁负责看住风险”，例如“慢慢撤。别带动线，钳口先松开，沿原路退”改成“慢慢撤，钳口先松开，别带动那根线，我们沿原路退回去”，“不剪，不取布条，也别再碰门禁片残片”改成“先把线固定住，布条和门禁片残片都暂时别动”。');
     if (issue.type === 'auditory-overclaim') actions.add('看不见来源的声音只写方向、远近、重量感和节奏，不直接写鞋子材质、身份或兵种。');
     if (issue.type === 'dash-explain-judgement') actions.add('去掉破折号后的解释判断，保留物件反馈、角色动作或一句短台词。');
     if (/sentence-chain|isolated-label/.test(issue.type)) actions.add('把连续短判断句合成带动作因果的自然段：动作、感知、停顿、选择连在一起，不一行一个结论。');
@@ -5763,34 +5861,17 @@ async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, pr
     buildPlatformStrategyGuide(project, automation),
     buildProjectStyleGuide(project, automation),
     '轻量动作与对话规则：',
-    '1. 动作章推进要快，但不要省成分镜提纲；根据场景需要补足必要过渡、身体反馈或环境后果，关键受阻和转折处要让读者看清因果。',
-    '2. 对话密度按场景压力调整，不追求固定轮数；追逐/战斗喊话可以短，但避免连续只报状态，根据场景需要加入判断、误判、急躁、威胁或立场。',
-    '2b. 汇报、远程通信、撤离安排、战斗指挥、价值判断这类台词要有最小逻辑桥。不要写成“能。物资还在。后面有动静。我会拖住。”的清单式报告；短句之间应自然带出转折、因果、让步、改口或动作停顿，让角色像人在现场说话，而不是逐项读状态。',
-    '2c. 台词因果一致性：角色先说的状态、后给的判断、命令和代价要互相回应。不要让“别拖太久”和“拖住他们”这类指令互相打架；需要同时存在时，写成条件、优先级或取舍，例如先找路、找不到就撤、东西不如人命重要。不要硬塞连接词，优先用停顿、动作、改口和省略保持自然。',
-    '2c-2. 句子自然承接：无论题材和场景，台词、判断、动作句通常应顺着人物当下的处境、注意力、情绪和选择自然长出来，让读者能隐约读出它和前后文的关系。普通短句、停顿、情绪反应可以留白，不必每句解释因果；但如果一句话读起来像孤立标签、任务条目、抽象口号、突兀判断或断开的命令，就优先补现场对象、身体反应、动作目的、风险代价、条件关系或轻微转折。不要靠堆连接词制造假顺滑。',
-    '2c-3. 短句留白资格：短句、断行和留白只在强情绪停顿、危险瞬间、角色不敢说完、重大发现落点、对话打断或章末钩子处少量使用。普通观察、否定判断、位置判断、动作安排、信息确认、声音/重量/速度描述，不要拆成连续孤立短句；“没有A。也没有B。”“不A。不B。不C。”“很慢。很重。”通常合并成一句自然表达，或接入动作、感受、风险和下一步判断。',
-    '2c-4. 碎片判断合并：连续出现“没有/也没有/不/不再/不能/很/太像/更像”等开头的短句时，除非是死亡确认、重大反转、人物崩溃或台词打断，否则优先合并为一两句自然判断。短句不是默认真人感，连续碎句会显得僵硬和分镜化。',
-    '2d. 急促省略要保留读者锚点：剂量、门锁、路线、通讯、药物、权限、伤员、物资等关键动作，不要省到只剩一个动词或半截名词。可以短，但要让人一眼知道“处理什么/怎么处理”，例如“剂量你来掐”“先挪到门口，别急着往里开”。',
-    '2e. 取舍和空间指令要具体：放弃、保留、拖延、撤离、不开门、绕路、隔离等决定，要让代价、收益和动作边界咬合。可以用口语、停顿和半句，但不要把“为什么这么选”压成抽象口号或位置标签。',
-    '3. 段落类型不硬轮换；连续行动段可以存在，但关键行动点尽量有不同阻碍、反馈或选择变化。',
-    '4. 幽默和史诗感优先保留为点缀，不作为主角每段默认反应；用户文风里的“幽默/诙谐/玩梗”必须服从当前剧情压力、人物状态和场景功能。高速追逐、受伤、求援、撤离、救人段优先写正常人的怕、疼、判断、误判和行动。吐槽是否停留更久，取决于当前压力、人物状态、周围环境和关系氛围。',
-    '4a. 正常对话优先级：主角先像正常人说话。求救、指挥、安抚、拒绝、解释、确认信息、承认害怕、安排撤离时，先把正常对话和行动信息说清；调侃、吐槽、梗、抽象比喻排在正常表达之后。若一句话可以正常说清，也可以说成梗，默认选正常说清；只有正常表达已完成且确实能体现嘴硬、遮掩害怕、缓冲关系或推动行动时，才短促补一句。',
-    '4a-2. 人设表达分层：降低吐槽不等于抹掉主角性格。优先用词气、停顿、回避、先动手后解释、用命令代替关心、骂半句又咽回去、害怕但仍选择行动来体现人设；玩梗和吐槽只是最后一层点缀。嘴硬角色可以少说梗但仍嘴硬，怕死角色可以不贫嘴但仍会先评估退路。',
-    '4b. 吐槽保留资格：调侃、吐槽、梗和夸张比喻只有在遮掩害怕、缓冲尴尬、暴露误判、减轻队友恐慌、表达嘴硬、推动关系或帮助角色下决心时才保留。若只是给句子加趣味、给危险贴游戏梗、把严肃场面说轻，优先改成动作、停顿、身体反应、现实判断。保持主角人设不等于高频吐槽。',
-    '4c. 游戏化梗降级：主角可以有玩家经验和游戏化联想，但高压真实伤痛、救人、撤离、被追杀、队友失联时，不要频繁用“出生点、野怪、支线、存档点、集火、挂号、客服、VIP、差评”等词给现实危险贴游戏标签。只有当这些词暴露误判、缓解队友恐慌、推动行动或被现实打脸时才保留；否则改成身体反应、现场判断、嘴硬半句或沉默。',
-    '5. 系统提示通常应改变人物动作，也可确认风险、打断判断或制造误判，不能无意义播报。',
-    '6. 独立短句密度：每个场景最多1处连续短句节拍，每章最多2处；只用于重大反转、死亡危险、强情绪停顿或章末钩子。普通动作、普通发现、计数、疼痛、人数、口令、逃跑决定，不要频繁单独成段写成“不大。”“一下。”“两下。”“疼。”“行。”“两个人。”“口令？”“跑。”，应合并到动作链和身体反应里。',
-    '7. 禁止连续标签短句套路：不要把普通发现、身份确认、威胁确认、情绪判断写成“短词/判断。重复或反向判断。转折解释。”的三段式。应并入人物动作、现场证据、身体反应或关系变化。例：不要写“药。真药。”“活捉。又是活捉。”“认得。但不敢认。”，改成手指停顿、对方扣紧武器、主角后颈绷紧等可见反应。',
-    '8. 吐槽和类比预算：吐槽要贴着当前动作、危险、关系或代价，并尽量承担遮掩害怕、暴露误判、缓冲关系尴尬、推动判断或显示立场的功能。高压连续动作段通常更短更少，尽快回到动作、身体反应、路线选择或外部压力；低压过渡、关系拉扯、日常修整、信息交换段可以多留一点口吻余味。强比喻、“不是A，是B”式反差句通常2-3章出现一次即可，不要每章都用血条、烧红铁丝、套餐等夸张模板。',
-    '8c. 高压判断链保护：高压撤离、救人、伤情恶化、倒计时、敌人逼近、门禁/陷阱触发时，先完成“看见问题 → 判断代价 → 安排动作”。吐槽不能插在判断和行动之间；如果会打断处理问题，就改成身体反应、停顿、咽回话或手指发抖。',
-    '8b. 类型经验边界：主角熟悉游戏、原作、系统或套路时，这些经验只能用于初始误判、快速判断或被现实纠正。遇到真实伤痛、救人、撤离、关系冲突时，优先写现场证据和人物选择；游戏/原作/系统梗只在改变行动、暴露误判或被现实打脸时出现。',
-    '9. 经验判断、战术判断、资源判断要转成动作句：不要把“发现资源/判断用途/决定行动/确认机会/确认风险”拆成连续标签。资源、目标、机会、风险判断不要连续两句以上独立成段；即使只有两句，例如“罗德岛运输车。开局资源点。”，也优先合并进人物视线、手部动作、移动选择或现实代价里。保留判断本身，但让判断推动下一步动作。例：不要写“有武器。能反打。捡！”“爆炸物。封路。控场。爽。”“氧气瓶。可爆物。打它。”“运输车残骸。罗德岛车。开局资源点。”，改成先看见物件，再让人物产生判断，并立刻受到现实条件约束。',
-    '10. 动作失败不要拆成读条：像“没动。再撬。还是没动。”只有在倒计时、濒死读秒或明确读条时才可少量使用；普通开门、撬锁、拉门栓、翻盖板等过程，要写成动作+阻力+身体反馈+环境变化，例如“他把输液架尖端卡进缝里用力一撬，门轴却只发出一声牙酸的响，纹丝不动。”',
-    '11. 编号、路线、坐标、暗号、档案信息可以短，但必须说明信息来源和用途：它是刻痕、路标、钥匙编号、地图坐标、系统提示还是角色口令。避免像在念标签。',
-    '12. 对照式强调要克制：不要频繁使用“不是A，不是B，而是C”“不像A，也不像B”“比起A，更像B”这类排比判断来制造真实感、反差感或冲击感。普通章节尽量不用；需要强落点时2-3章保留1处即可，其余对照转成触感、重量、气味、疼痛、声音、动作受阻、人物迟疑或代价。',
-    '13. 环境描写要服务行动：移动、追逐、撤离段不要像摄像机扫街。每个环境段只保留1-2个会改变路线、遮挡视线、暴露敌人或提供可利用物的细节；不要同时堆右侧店铺、左侧楼体、前方外墙、铁栏杆、粉尘和吐槽。',
-    '15. 三项抽象排比要压缩：不要连续写“当筹码、当诱饵、当剧情推进器”这类三连抽象判断；只保留最贴当前上下文的一项，再接动作、选择或现实代价。',
-    '14. 紧急口令可以短，但不要长期写成纯名词三连。像“书柜。门轴。堵住他们。”应稍微带动作关系，例如“把书柜推过去，卡住门轴，别让他们冲进来。”短促可以保留，至少要让读者知道谁用什么做什么。',
+    '1. 正常说话优先：求救、指挥、安抚、拒绝、解释、确认信息和安排撤离时，先把正常对话和行动信息说清。',
+    '2. 动作因果清楚：看见问题、判断代价、安排动作要连上；关键受阻和转折处补足必要过渡、身体反馈或环境后果。',
+    '3. 角色口吻服务关系：人物按当下处境、关系、目的、信息差和身体状态说话；短句可以有，但不要像清单报告。',
+    '3b. 必要成分补足：短句可以急促，但只要补出主语、对象、动作方向、退回路径、下一步安排能让句子更自然，就优先补出来。停止、撤离、别碰、剪断、固定、打开、关闭、放弃、转移这类关键动作要说清“谁做/做什么/别动哪样东西/往哪里退/下一步处理什么”。连续“不A、不B、别C”优先改成“先做什么 + 哪些动作暂停/谁负责看住风险”。',
+    '4. 短句有资格：短句、断行和留白只用于强情绪、危险瞬间、对话打断、重大发现或章末钩子；普通观察、否定判断、位置判断、动作安排和信息确认写成自然句。',
+    '5. 否定对照极低频：“不是A，也不是B”“没有A。也没有B。”“不A。不B。”这类句式默认几十章才偶尔保留一次；普通段落改成动作、停顿、物件反馈或下一步选择。',
+    '6. 吐槽低于人设和行动：调侃、梗和夸张比喻只有在遮掩害怕、暴露误判、缓冲关系或推动行动时才短促出现；高压救人、撤离、伤情恶化和敌人逼近时优先写行动。',
+    '7. 类型经验有边界：游戏、原作、系统或套路经验只用于初始误判、快速判断或被现实纠正；遇到真实伤痛、救人和关系冲突时优先写现场证据和人物选择。',
+    '8. 系统提示只改变动作：系统提示必须独立成行、整行【】包住，只给目标、限制、风险、异常、奖励或代价，不能替作者讲世界观。',
+    '9. 环境服务行动：每个环境段只保留会改变路线、遮挡视线、暴露敌人或提供可利用物的1-2个细节。',
+    '10. 首稿不要自我检查式写作：不要为了满足规则而逐条展示技巧，先让人物在麻烦里自然行动；详细检测交给后处理。',
     '作品信息：',
     `作品名：${project.title}`,
     `题材：${project.genre}`,
@@ -6157,6 +6238,7 @@ function parseSuggestedNumber(text, fallback) {
 
 export const __testHooks = {
   callDeepSeek,
+  callDeepSeekStream,
   createTimeoutSignal,
   combineAbortSignals,
   buildProjectPayload,
@@ -6167,6 +6249,8 @@ export const __testHooks = {
   cleanAutomationLedgersAfterChapterDelete,
   resetAutomationRuntimeState,
   buildAuthorPersonaPrompt,
+  buildReaderExpectationGuide,
+  buildChapterCardControlGuide,
   cleanCardFieldText,
   cleanStoredChapterContent,
   formatChapterCard,
@@ -7225,6 +7309,100 @@ app.post('/api/projects/:id/automation/generate-current', auth, async (req, res)
   }
 });
 
+app.post('/api/projects/:id/automation/generate-current/stream', auth, async (req, res) => {
+  const send = startNdjsonStream(res);
+  try {
+    const index = req.db.projects.findIndex((item) => item.id === req.params.id && item.ownerId === req.user.id);
+    if (index === -1) throw new Error('作品不存在');
+    const { apiKey, model, baseUrl } = resolveAiModelConfig(req.body, 'writing');
+    const { chapterId, chapterNumber } = req.body;
+    const project = req.db.projects[index];
+    const automation = project.automation || {};
+    if (!apiKey) throw new Error('缺少 DeepSeek API Key');
+    if (!automation.masterPlan) throw new Error('请先生成长篇规划');
+    const chapters = project.chapters || [];
+    const selectedIndex = chapterId ? chapters.findIndex((chapter) => chapter.id === chapterId) : Math.max(0, (Number(chapterNumber) || 1) - 1);
+    if (selectedIndex < 0 || selectedIndex >= chapters.length) throw new Error('请先选择要生成的章节');
+    const targetChapterNumber = selectedIndex + 1;
+    assertEnoughChapterCards({ automation, startChapter: targetChapterNumber, batchCount: 1 });
+    const card = (automation.chapterCards || [])[targetChapterNumber - 1];
+    const nextCard = (automation.chapterCards || [])[targetChapterNumber] || null;
+    const signal = getRequestAbortSignal(req);
+    const previousChapter = project.chapters?.filter((chapter, idx) => idx < selectedIndex && !isBlankStarterChapter(chapter, idx)).at(-1) || null;
+    send({ type: 'phase', text: `正在流式生成第${targetChapterNumber}章草稿` });
+    const prompt = promptComposer.buildGenerationPrompt([
+      '轻量生成模式：你是中文网文作者，只写当前这一章，不解释，不输出写作计划。',
+      '本模式保留蓝图、作者人设、章节卡和最近上下文，但跳过场景包、叙事拍和多层重控制；目标是更自然、顺畅、像真人连载正文。',
+      '输出格式必须严格为：### 第X章 标题\n摘要：...\n正文：...',
+      '叙事人称：第三人称有限视角，主视角跟随当前主角；不要用第一人称做正文叙述。',
+      '正文长度：1500-4000中文字符；宁可少写，也不要扩成长章。',
+      '系统提示格式：系统弹窗必须独立成行，整行用【】包住；不要写成【搜】附近可回收物资这种半框格式，应写成【搜：附近可回收物资为运输车残骸】。',
+      buildNoMetaNarrationGuide(),
+      buildHumanWebNovelReadabilityGuide(),
+      buildHumanWritingEnginePrompt({ project, automation, card, nextCard, chapterNumber: targetChapterNumber, previousChapter, scope: '轻量正文流式生成' }),
+      buildPacingGuardText({ currentCount: targetChapterNumber - 1, batchCount: 1, targetChapters: automation.targetChapters || 600 }),
+      buildPlatformStrategyGuide(project, automation),
+      buildProjectStyleGuide(project, automation),
+      '轻量动作与对话规则：',
+      '1. 正常说话优先：求救、指挥、安抚、拒绝、解释、确认信息和安排撤离时，先把正常对话和行动信息说清。',
+      '2. 动作因果清楚：看见问题、判断代价、安排动作要连上；关键受阻和转折处补足必要过渡、身体反馈或环境后果。',
+      '3. 角色口吻服务关系：人物按当下处境、关系、目的、信息差和身体状态说话；短句可以有，但不要像清单报告。',
+      '3b. 必要成分补足：短句可以急促，但只要补出主语、对象、动作方向、退回路径、下一步安排能让句子更自然，就优先补出来。连续“不A、不B、别C”优先改成“先做什么 + 哪些动作暂停/谁负责看住风险”。',
+      '4. 短句有资格：短句、断行和留白只用于强情绪、危险瞬间、对话打断、重大发现或章末钩子；普通观察、否定判断、位置判断、动作安排和信息确认写成自然句。',
+      '5. 否定对照极低频：“不是A，也不是B”“没有A。也没有B。”“不A。不B。”这类句式默认几十章才偶尔保留一次；普通段落改成动作、停顿、物件反馈或下一步选择。',
+      '6. 吐槽低于人设和行动：调侃、梗和夸张比喻只有在遮掩害怕、暴露误判、缓冲关系或推动行动时才短促出现；高压救人、撤离、伤情恶化和敌人逼近时优先写行动。',
+      '7. 类型经验有边界：游戏、原作、系统或套路经验只用于初始误判、快速判断或被现实纠正；遇到真实伤痛、救人和关系冲突时优先写现场证据和人物选择。',
+      '8. 系统提示只改变动作：系统提示必须独立成行、整行【】包住，只给目标、限制、风险、异常、奖励或代价，不能替作者讲世界观。',
+      '9. 环境服务行动：每个环境段只保留会改变路线、遮挡视线、暴露敌人或提供可利用物的1-2个细节。',
+      '10. 首稿不要自我检查式写作：不要为了满足规则而逐条展示技巧，先让人物在麻烦里自然行动；详细检测交给后处理。',
+      '作品信息：',
+      `作品名：${project.title}`,
+      `题材：${project.genre}`,
+      `读者：${project.targetAudience}`,
+      `核心设定：${project.premise}`,
+      '作者人设：',
+      automation.authorPersona || '',
+      '长篇蓝图：',
+      automation.masterPlan || '',
+      buildAutomationMemoryGuide(project, automation),
+      buildContinuityMemoryText(project, automation),
+      '当前章节卡：',
+      formatChapterCard(card, targetChapterNumber),
+      nextCard ? '下一章只作为章末钩子方向参考，禁止提前写下一章正文：' : '',
+      nextCard ? formatChapterCard(nextCard, targetChapterNumber + 1) : '',
+      previousChapter ? '上一章承接：' : '',
+      previousChapter ? `${previousChapter.title}\n摘要：${previousChapter.summary || ''}\n正文末段：${normalizeText(previousChapter.content).slice(-1200)}` : '',
+      '最近章节摘要：',
+      ...project.chapters.filter((chapter, idx) => idx < selectedIndex && !isBlankStarterChapter(chapter, idx)).slice(-5).map((chapter) => `${chapter.title}\n${chapter.summary}`),
+      '最近正文衔接上下文：',
+      buildRecentContext(project.chapters.filter((chapter, idx) => idx < selectedIndex && !isBlankStarterChapter(chapter, idx)), 3),
+      '只写本章章节卡允许的事件；不要提前写后续章节正文；章末停在当前章节卡钩子或下一步选择上。',
+    ]);
+    const text = await callDeepSeekStream({ apiKey, model, baseUrl, temperature: 0.68, userPrompt: prompt, maxTokens: 8192, signal, timeoutMs: 300000, onToken: (token) => send({ type: 'token', text: token }) });
+    send({ type: 'phase', text: '正在解析和保存最终稿' });
+    if (signal?.aborted) throw new Error('AI 请求已中断');
+    const resolved = await resolveGeneratedChapters({ apiKey, model, baseUrl, project, automation, sections: extractGeneratedSections(text).slice(0, 1), plannedCards: [card], startChapter: targetChapterNumber, batchCount: 1, defaultVolumeId: project.volumes[0]?.id || '', sourceText: text, reason: `流式生成第${targetChapterNumber}章时章节边界不完整`, signal });
+    if (signal?.aborted) throw new Error('AI 请求已中断');
+    const parsed = resolved.chapters[0];
+    if (!parsed || isInvalidGeneratedChapter(parsed)) throw new Error(`AI 未返回可写入第${targetChapterNumber}章正文`);
+    const existingChapter = chapters[selectedIndex] || {};
+    const generatedChapter = createChapter(withChapterNumber({ ...existingChapter, ...parsed, id: existingChapter.id || parsed.id, volumeId: parsed.volumeId || card.volumeId || existingChapter.volumeId || project.volumes[0]?.id || '', content: repairDenseRhetoricLocally(repairUrgentCommandBurstsLocally(repairStandaloneTacticalLabelsLocally(repairSystemMessageLocally(stripMarkdownNoise(parsed.content || ''))))), summary: resolveStoredChapterSummary(card, parsed.content || ''), status: existingChapter.status || parsed.status || 'draft', updatedAt: now() }, targetChapterNumber));
+    const nextChapters = chapters.map((chapter, chapterIndex) => (chapterIndex === selectedIndex ? generatedChapter : chapter));
+    const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: [generatedChapter], cards: [card], startChapter: targetChapterNumber, previousAutomation: automation });
+    const contentWordDelta = countWords(generatedChapter.content || '') - countWords(existingChapter.content || '');
+    const nextProject = buildProjectPayload({ ...project, chapters: nextChapters, automation: { ...automation, ...ledgerUpdate, continuityMemory: buildContinuityMemoryUpdate([generatedChapter], targetChapterNumber, automation.continuityMemory), totalGeneratedWords: Math.max(0, (automation.totalGeneratedWords || 0) + contentWordDelta), status: automation.status === 'idle' ? 'paused' : automation.status, progressNotes: `已用轻量流式生成第 ${targetChapterNumber} 章` } });
+    if (signal?.aborted) throw new Error('AI 请求已中断');
+    req.db.projects[index] = nextProject;
+    await writeDb(req.db);
+    send({ type: 'saved', text: `第${targetChapterNumber}章已保存`, chapter: generatedChapter, chapters: [generatedChapter], project: nextProject, output: [resolved.text, resolved.pacingReport].filter(Boolean).join('\n\n') });
+    send({ type: 'done' });
+    res.end();
+  } catch (error) {
+    send({ type: 'error', message: error instanceof Error ? error.message : '当前章节流式生成失败' });
+    res.end();
+  }
+});
+
 app.post('/api/projects/:id/automation/generate-batch', auth, async (req, res) => {
   const index = req.db.projects.findIndex((item) => item.id === req.params.id && item.ownerId === req.user.id);
   if (index === -1) {
@@ -7383,8 +7561,8 @@ app.post('/api/projects/:id/automation/chapter-cards', auth, async (req, res) =>
     buildAutomationMemoryGuide(project, automation),
     '章节卡连续性要求：每张卡必须说明它要承接上一章哪个动作、选择、伤势、隐瞒、系统提示或未解释线索；不能只写孤立剧情点。',
     '伏笔账本要求：每张卡必须标明“新埋伏笔 / 推进伏笔 / 回收伏笔 / 暂不回收”之一，并写清伏笔对象。',
-    '爽点要求：每张卡必须写“本章爽点”，可选信息爽、关系爽、系统奖励、行动兑现、反差梗、原作遗憾推进；调查章也必须有线索奖励感。',
-    '文风落点要求：每张卡必须让“本章爽点”同时说明如何体现作者人设和作品文风；至少包含一个魏杰嘴硬/短吐槽、系统短讯、废墟中的小选择、明日方舟同人触点或幽默与史诗并存的瞬间。文风落点只写剧情设计，不要写正文句子。',
+    '爽点要求：每张卡必须写“本章爽点”，可选信息爽、关系爽、系统奖励、行动兑现、反差梗、原作遗憾推进；调查章也必须有线索奖励感。爽点只写剧情兑现和读者获得感，不写正文口吻要求。',
+    '章节卡只写剧情轨道，不规定正文口吻。可提示本章适合保留的角色压力、关系变化或系统规则，但不要要求每章固定出现吐槽、系统短讯、同人梗、史诗句或作者人设展示。',
     '支线寿命要求：同一地点、物件、谜团或异常最多连续占用5章；超过5章必须在本批收束、转场或回到卷级目标，不能继续滚出新谜团。',
     '系统规则要求：涉及系统/金手指时必须写清已知规则、限制或本章仅允许的反馈，禁止临时新增外挂能力。',
     '角色规划：章节卡只写角色在剧情中的信息差、隐瞒、冲突或结果，不要规定台词写法。',
@@ -7455,6 +7633,110 @@ app.post('/api/projects/:id/automation/chapter-cards', auth, async (req, res) =>
     res.json({ text, project: nextProject, targetChapter: targetCardChapter, generatedCount: newChapterCards.length, partial: newChapterCards.length < expectedNewCardCount, fallback: usedAttempt.label });
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : '章节卡生成失败' });
+  }
+});
+
+app.post('/api/projects/:id/automation/chapter-cards/stream', auth, async (req, res) => {
+  const send = startNdjsonStream(res);
+  try {
+    const index = req.db.projects.findIndex((item) => item.id === req.params.id && item.ownerId === req.user.id);
+    if (index === -1) throw new Error('作品不存在');
+    const { apiKey, model, baseUrl } = resolveAiModelConfig(req.body, 'chapter-card');
+    const { targetChapter } = req.body;
+    const project = req.db.projects[index];
+    const automation = project.automation || {};
+    if (!apiKey) throw new Error('缺少 DeepSeek API Key');
+    if (!automation.masterPlan) throw new Error('请先生成长篇规划');
+    const existingCards = automation.chapterCards || [];
+    const nextCardStart = existingCards.length + 1;
+    const targetCardChapter = Math.max(1, Number(targetChapter) || Number(automation.targetChapters) || 600);
+    if (targetCardChapter < nextCardStart) throw new Error(`章节卡已排到第 ${existingCards.length} 章，目标章节必须大于当前章节卡数量`);
+    const expectedNewCardCount = targetCardChapter - existingCards.length;
+    const allowedVolumeNames = project.volumes.map((volume) => volume.title).join('、');
+    const signal = getRequestAbortSignal(req);
+    const openingPlan = [];
+    const previousOpeningTypes = existingCards.map((card) => normalizeText(card.openingType).trim()).filter(Boolean);
+    for (let idx = 0; idx < expectedNewCardCount; idx += 1) {
+      const order = nextCardStart + idx;
+      const narrativeMode = normalizeNarrativeMode('', order);
+      const openingType = getOpeningTypeByContext({ project, automation, order, narrativeMode, previousTypes: [...previousOpeningTypes, ...openingPlan.map((item) => item.openingType)] });
+      openingPlan.push({ order, openingType, openingLabel: openingTypeLabels[openingType] || openingType, narrativeMode, narrativePurpose: getNarrativePurposeByMode(narrativeMode), openingBan: getOpeningBanByType(openingType) });
+    }
+    const buildChapterCardPrompt = (attemptCount = expectedNewCardCount) => {
+      const attemptTargetChapter = nextCardStart + Math.max(1, attemptCount) - 1;
+      return [
+        '请根据以下长篇蓝图和分卷信息，自动续排章节卡。',
+        '章节卡只安排剧情事件，必须给真人写作模块留下发挥空间：写清人物困境、错误行动、现实打断、信息差、结果和具体钩子，不要写正文写法。',
+        '如果已有章节卡，只能从已有章节卡之后继续排，不能重写、覆盖或重复已有章节卡。',
+        `本次目标续排第${nextCardStart}章到第${attemptTargetChapter}章，共${attemptCount}张章节卡；尽量写满，若受长度限制也必须至少返回1张完整章节卡。`,
+        '输出格式必须逐章严格重复：### 第X章 标题\n卷：...\n蓝图阶段：...\n本章目标：...\n核心事件：...\n出场人物：...\n关键物件/线索：...\n本章结果：...\n进度锁：...\n本章只允许：...\n本章禁止：...\n读者预期：...\n上一章遗留动作：...\n伏笔规划：...\n本章爽点：...\n平台适配：...\n系统规则：...\n摘要：...\n关键钩子：...',
+        '卷名必须从给定分卷列表中逐字选择，不允许自造卷名；摘要必须不能为空，必须写清本章剧情目标、冲突、结果和结尾钩子。',
+        '每张章节卡必须是慢节奏卡：只写当前章的小目标，不允许把后续几十章、几百章后的核心冲突提前放进摘要或钩子。',
+        `第${nextCardStart}章是本次续排的第一张卡，必须写出清晰的新场景、新冲突和本章结果，不能只复述上一章。`,
+        '章节卡禁止输出写法字段：不要写“开头方式/开头锚点/禁止开头/叙事手法/叙事目的/章节功能/对话密度/叙述质感/人味锚点/正文禁区/段落节奏”。这些由真人写作模块负责。',
+        buildReaderExpectationGuide(),
+        buildChapterCardControlGuide(),
+        buildHumanWritingSystemGuide({ project, automation, scope: '自动排章节卡' }),
+        buildPlatformStrategyGuide(project, automation),
+        buildAutomationMemoryGuide(project, automation),
+        '章节卡连续性要求：每张卡必须说明它要承接上一章哪个动作、选择、伤势、隐瞒、系统提示或未解释线索；不能只写孤立剧情点。',
+        '伏笔账本要求：每张卡必须标明“新埋伏笔 / 推进伏笔 / 回收伏笔 / 暂不回收”之一，并写清伏笔对象。',
+        '爽点要求：每张卡必须写“本章爽点”，可选信息爽、关系爽、系统奖励、行动兑现、反差梗、原作遗憾推进；调查章也必须有线索奖励感。爽点只写剧情兑现和读者获得感，不写正文口吻要求。',
+        '章节卡只写剧情轨道，不规定正文口吻。可提示本章适合保留的角色压力、关系变化或系统规则，但不要要求每章固定出现吐槽、系统短讯、同人梗、史诗句或作者人设展示。',
+        '支线寿命要求：同一地点、物件、谜团或异常最多连续占用5章；超过5章必须在本批收束、转场或回到卷级目标，不能继续滚出新谜团。',
+        '系统规则要求：涉及系统/金手指时必须写清已知规则、限制或本章仅允许的反馈，禁止临时新增外挂能力。',
+        '角色规划：章节卡只写角色在剧情中的信息差、隐瞒、冲突或结果，不要规定台词写法。',
+        `参考总章节数：${automation.targetChapters || 600}`,
+        `已有章节卡数量：${existingCards.length}`,
+        `本次必须从第${nextCardStart}章开始续排，到第${attemptTargetChapter}章结束`,
+        `允许使用的卷名：${allowedVolumeNames || '第一卷'}`,
+        '长篇蓝图：',
+        automation.masterPlan,
+        buildAuthorPersonaGuide(automation.authorPersona),
+        getLatestCheckpointReport(automation) ? '最新20章检查点报告：' : '',
+        getLatestCheckpointReport(automation) || '',
+        '分卷信息：',
+        project.volumes.map((volume) => `${volume.title}\n定位：${volume.positioning}\n目标：${volume.goal}\n钩子：${volume.endingHook}`).join('\n\n'),
+        '最近已有章节卡：',
+        existingCards.slice(-5).map((card) => `${card.order}. ${card.title}\n卷：${card.volumeName}\n读者预期：${card.readerExpectation || ''}\n上一章遗留动作：${card.openAction || ''}\n伏笔规划：${card.foreshadowing || ''}\n本章爽点：${card.commercialBeat || ''}\n平台适配：${card.platformNotes || ''}\n系统规则：${card.systemRule || ''}\n摘要：${card.summary}\n钩子：${card.hook}`).join('\n\n'),
+      ].join('\n');
+    };
+    send({ type: 'phase', text: `正在流式排第${nextCardStart}-${targetCardChapter}章章节卡` });
+    const text = await callDeepSeekStream({ apiKey, model, baseUrl, temperature: 0.9, userPrompt: buildChapterCardPrompt(expectedNewCardCount), signal, timeoutMs: 300000, onToken: (token) => send({ type: 'token', text: token }) });
+    send({ type: 'phase', text: '正在解析章节卡并保存' });
+    if (signal?.aborted) throw new Error('AI 请求已中断');
+    let sections = extractGeneratedSections(text).slice(0, expectedNewCardCount);
+    let usedText = text;
+    let fallback = 'stream';
+    if (!sections.length) {
+      send({ type: 'phase', text: '流式返回不可解析，降级为普通1章生成' });
+      if (signal?.aborted) throw new Error('AI 请求已中断');
+      usedText = await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.9, userPrompt: buildChapterCardPrompt(1), signal });
+      sections = extractGeneratedSections(usedText).slice(0, 1);
+      fallback = 'stream-to-json-1';
+    }
+    if (!sections.length) {
+      send({ type: 'phase', text: '章节卡仍不可解析，临时切换 DeepSeek 生成本批' });
+      if (signal?.aborted) throw new Error('AI 请求已中断');
+      const deepseekConfig = resolveAiModelConfig({ ...req.body, modelRouting: 'mixed' }, 'planning');
+      if (!deepseekConfig.apiKey) throw new Error('DeepSeek 配置缺少 API Key，无法执行章节卡降级');
+      usedText = await callDeepSeek({ ...deepseekConfig, temperature: 0.9, userPrompt: buildChapterCardPrompt(expectedNewCardCount), signal });
+      sections = extractGeneratedSections(usedText).slice(0, expectedNewCardCount);
+      fallback = 'stream-to-deepseek';
+    }
+    if (!sections.length) throw new Error('AI 未返回可解析的章节卡，请重试。');
+    const newChapterCards = sections.map((section, idx) => parseGeneratedChapterCardSection({ section, order: nextCardStart + idx, plannedOpening: openingPlan[idx] || {}, project }));
+    const chapterCards = [...existingCards, ...newChapterCards].map((card, idx) => ({ ...card, order: idx + 1, title: `第${idx + 1}章 ${stripChapterNumber(card.title) || '未命名章节'}` }));
+    const nextProject = buildProjectPayload({ ...project, automation: { ...automation, chapterCards, progressNotes: newChapterCards.length < expectedNewCardCount ? `流式章节卡本次返回 ${newChapterCards.length}/${expectedNewCardCount} 张，已先写入。` : `已流式续排 ${newChapterCards.length} 个章节卡，当前共 ${chapterCards.length} 个章节卡` } });
+    if (signal?.aborted) throw new Error('AI 请求已中断');
+    req.db.projects[index] = nextProject;
+    await writeDb(req.db);
+    send({ type: 'saved', text: `已保存 ${newChapterCards.length} 张章节卡`, project: nextProject, output: usedText, targetChapter: targetCardChapter, generatedCount: newChapterCards.length, partial: newChapterCards.length < expectedNewCardCount, fallback });
+    send({ type: 'done' });
+    res.end();
+  } catch (error) {
+    send({ type: 'error', message: error instanceof Error ? error.message : '章节卡流式生成失败' });
+    res.end();
   }
 });
 

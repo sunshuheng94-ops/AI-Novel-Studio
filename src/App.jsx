@@ -163,9 +163,19 @@ function getPlatformStrategy(project) {
   };
 }
 
-const appVersion = '1.7.5';
+const appVersion = '1.7.6';
 
 const changelogItems = [
+  {
+    version: '1.7.6',
+    date: '2026-05-27',
+    title: '章节卡和当前章支持流式预览',
+    changes: [
+      '自动排章节卡改为流式接收模型输出，前端实时显示章节卡草稿，完整解析成功后再写入数据库。',
+      '生成第一章/当前章新增流式正文预览，模型边写边显示草稿，结束后解析、清理并保存最终稿。',
+      '继续保留取消请求、章节卡降级和最终保存校验；流式只改善等待体验，不边生成边落库。',
+    ],
+  },
   {
     version: '1.7.5',
     date: '2026-05-25',
@@ -811,6 +821,7 @@ export default function App() {
   const [aiExtraPrompt, setAiExtraPrompt] = useState('');
   const [chapterTargetWords, setChapterTargetWords] = useState(2200);
   const [aiOutput, setAiOutput] = useState('');
+  const [streamPreview, setStreamPreview] = useState({ active: false, phase: '', text: '' });
   const [publishChecklist, setPublishChecklist] = useState([]);
   const [sensitiveKeywords, setSensitiveKeywords] = useState([]);
   const [chapterAuditReport, setChapterAuditReport] = useState('');
@@ -1118,6 +1129,46 @@ export default function App() {
     currentAiAbortRef.current = controller;
     try {
       return await api(url, { ...options, signal: controller.signal });
+    } finally {
+      if (currentAiAbortRef.current === controller) {
+        currentAiAbortRef.current = null;
+      }
+    }
+  }
+
+  async function apiStreamWithAiAbort(url, { body, onEvent } = {}) {
+    const controller = new AbortController();
+    currentAiAbortRef.current = controller;
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || '请求失败');
+      }
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('浏览器未返回可读取的流');
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          onEvent?.(JSON.parse(line));
+        }
+      }
+      if (buffer.trim()) onEvent?.(JSON.parse(buffer));
     } finally {
       if (currentAiAbortRef.current === controller) {
         currentAiAbortRef.current = null;
@@ -1527,25 +1578,47 @@ export default function App() {
       const lightweight = Boolean(selectedProject.automation?.lightweightGeneration);
       setWritingProgress({ label: '生成当前章', current: 0, total: 1, chapter: chapterNumber, note: withAiLabel(`正在按${lightweight ? '轻量生成模式' : '章节卡'}生成第 ${chapterNumber} 章`, aiConfig, 'writing') });
       setStatus(withAiLabel(`正在按${lightweight ? '轻量生成模式' : '新版本单章质量模式'}生成第 ${chapterNumber} 章`, aiConfig, 'writing'));
-      const data = await apiWithAiAbort(`/api/projects/${selectedProject.id}/automation/generate-current`, {
-        method: 'POST',
-        body: JSON.stringify({
-          ...aiConfig,
-          chapterId: selectedChapter.id,
-          chapterNumber,
-          lightweight,
-        }),
+      if (!lightweight) {
+        const data = await apiWithAiAbort(`/api/projects/${selectedProject.id}/automation/generate-current`, {
+          method: 'POST',
+          body: JSON.stringify({ ...aiConfig, chapterId: selectedChapter.id, chapterNumber, lightweight }),
+        });
+        setProjects((current) => current.map((item) => (item.id === data.project.id ? data.project : item)));
+        setSelectedChapterId(data.chapter?.id || selectedChapter.id);
+        setAiOutput(data.text || data.chapter?.content || '');
+        setChapterAuditReport('');
+        setWritingProgress({ label: '生成当前章', current: 1, total: 1, chapter: chapterNumber, note: `已完成第 ${chapterNumber} 章` });
+        setStatus((data.warnings || []).length ? `已生成当前章，但有警告：${data.warnings.join('；')}` : `已按新版本单章质量模式生成第 ${chapterNumber} 章`);
+        return;
+      }
+      let savedData = null;
+      setStreamPreview({ active: true, phase: '正在连接流式生成', text: '' });
+      await apiStreamWithAiAbort(`/api/projects/${selectedProject.id}/automation/generate-current/stream`, {
+        body: JSON.stringify({ ...aiConfig, chapterId: selectedChapter.id, chapterNumber, lightweight }),
+        onEvent: (event) => {
+          if (event.type === 'phase') {
+            setStreamPreview((current) => ({ ...current, active: true, phase: event.text || '' }));
+            setWritingProgress((current) => current ? { ...current, note: event.text || current.note } : current);
+          }
+          if (event.type === 'token') {
+            setStreamPreview((current) => ({ ...current, active: true, text: `${current.text}${event.text || ''}` }));
+          }
+          if (event.type === 'saved') savedData = event;
+          if (event.type === 'error') throw new Error(event.message || '当前章节流式生成失败');
+        },
       });
-      setProjects((current) => current.map((item) => (item.id === data.project.id ? data.project : item)));
-      setSelectedChapterId(data.chapter?.id || selectedChapter.id);
-      setAiOutput(data.text || data.chapter?.content || '');
+      if (!savedData?.project) throw new Error('流式生成未返回保存结果');
+      setProjects((current) => current.map((item) => (item.id === savedData.project.id ? savedData.project : item)));
+      setSelectedChapterId(savedData.chapter?.id || selectedChapter.id);
+      setAiOutput(savedData.output || savedData.chapter?.content || '');
       setChapterAuditReport('');
       setWritingProgress({ label: '生成当前章', current: 1, total: 1, chapter: chapterNumber, note: `已完成第 ${chapterNumber} 章` });
-      setStatus((data.warnings || []).length ? `已生成当前章，但有警告：${data.warnings.join('；')}` : `已按${lightweight ? '轻量生成模式' : '新版本单章质量模式'}生成第 ${chapterNumber} 章`);
+      setStatus(`已流式生成并保存第 ${chapterNumber} 章`);
     } catch (error) {
-      setStatus(isAbortError(error) ? '已中断当前章节生成' : error.message || '当前章节生成失败');
+      setStatus(isAbortError(error) || /中断|Abort/i.test(error.message || '') ? '已中断当前章节生成' : error.message || '当前章节生成失败');
     } finally {
       currentAiAbortRef.current = null;
+      setStreamPreview({ active: false, phase: '', text: '' });
       setWritingProgress(null);
       setLoading(false);
     }
@@ -1950,18 +2023,28 @@ export default function App() {
         setWritingProgress({ label: '自动排章节卡', current: generatedCount, total: totalNeeded, chapter: batchStart, note: withAiLabel(`正在补排第 ${batchStart}-${Math.min(currentTarget, targetChapter)} 章`, aiConfig, 'chapter-card') });
         setStatus(withAiLabel(`正在自动补排章节卡（第 ${batchStart}-${Math.min(currentTarget, targetChapter)} 章，${generatedCount}/${totalNeeded}）`, aiConfig, 'chapter-card'));
 
-        const data = await apiWithAiAbort(`/api/projects/${selectedProject.id}/automation/chapter-cards`, {
-          method: 'POST',
-          body: JSON.stringify({
-            ...aiConfig,
-            targetChapter: Math.min(currentTarget, targetChapter),
-          }),
+        let data = null;
+        setStreamPreview({ active: true, phase: '正在连接章节卡流式生成', text: '' });
+        await apiStreamWithAiAbort(`/api/projects/${selectedProject.id}/automation/chapter-cards/stream`, {
+          body: JSON.stringify({ ...aiConfig, targetChapter: Math.min(currentTarget, targetChapter) }),
+          onEvent: (event) => {
+            if (event.type === 'phase') {
+              setStreamPreview((current) => ({ ...current, active: true, phase: event.text || '' }));
+              setWritingProgress((current) => current ? { ...current, note: event.text || current.note } : current);
+            }
+            if (event.type === 'token') {
+              setStreamPreview((current) => ({ ...current, active: true, text: `${current.text}${event.text || ''}` }));
+            }
+            if (event.type === 'saved') data = event;
+            if (event.type === 'error') throw new Error(event.message || '章节卡流式生成失败');
+          },
         });
+        if (!data?.project) throw new Error('章节卡流式生成未返回保存结果');
 
         const nextCount = data.project.automation?.chapterCards?.length || 0;
         latestCardCount = nextCount;
         generatedCount = nextCount - existingCount;
-        setAiOutput((current) => [current, data.text].filter(Boolean).join('\n\n'));
+        setAiOutput((current) => [current, data.output].filter(Boolean).join('\n\n'));
         setProjects((current) => current.map((item) => (item.id === data.project.id ? data.project : item)));
         setWritingProgress({ label: '自动排章节卡', current: generatedCount, total: totalNeeded, chapter: Math.min(currentTarget, targetChapter), note: `已排到第 ${nextCount} 张章节卡` });
 
@@ -1972,10 +2055,11 @@ export default function App() {
 
       setStatus(stopAiWritingRef.current ? `已中断自动排章节卡，本轮完成 ${generatedCount} 张` : `已自动补排到第 ${Math.min(targetChapter, latestCardCount)} 章`);
     } catch (error) {
-      setStatus(isAbortError(error) ? `已中断自动排章节卡，本轮完成 ${generatedCount} 张` : error.message || '章节卡生成失败');
+      setStatus(isAbortError(error) || /中断|Abort/i.test(error.message || '') ? `已中断自动排章节卡，本轮完成 ${generatedCount} 张` : error.message || '章节卡生成失败');
     } finally {
       setWritingProgress((current) => current ? { ...current, note: stopAiWritingRef.current ? `已中断，本轮完成 ${generatedCount} 张章节卡` : generatedCount ? `本轮完成 ${generatedCount} 张章节卡` : '本轮未完成章节卡' } : null);
       currentAiAbortRef.current = null;
+      setStreamPreview({ active: false, phase: '', text: '' });
       setLoading(false);
     }
   }
@@ -2994,6 +3078,16 @@ export default function App() {
                       </div>
                       <p>{writingProgress.note}</p>
                       <small>当前处理：第 {writingProgress.chapter} 章</small>
+                    </div>
+                  ) : null}
+                  {streamPreview.active || streamPreview.text ? (
+                    <div className="stream-preview">
+                      <div className="writing-progress-top">
+                        <strong>流式预览</strong>
+                        <span>{streamPreview.active ? '生成中' : '已结束'}</span>
+                      </div>
+                      <p>{streamPreview.phase || '正在接收模型输出'}</p>
+                      <pre>{streamPreview.text || '等待首个 token...'}</pre>
                     </div>
                   ) : null}
                   <div className="risk-box">
