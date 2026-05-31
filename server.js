@@ -146,6 +146,19 @@ function normalizeLedger(value, limit = 80) {
   return Array.isArray(value) ? value.filter(Boolean).slice(-limit) : [];
 }
 
+const automationLedgerLimits = {
+  foreshadowingLedger: 240,
+  readerExpectations: 160,
+  commercialBeatLedger: 160,
+  characterStateMemory: 300,
+  powerSystemLedger: 200,
+  chapterFunctionCalendar: 240,
+};
+
+function normalizeAutomationLedger(key, value) {
+  return normalizeLedger(value, automationLedgerLimits[key] || 80);
+}
+
 function createProjectTemplate(payload = {}, ownerId) {
   const createdAt = now();
   const defaultVolume = createVolume({ title: '第一卷', positioning: '开篇立钩子', goal: '建立主角诉求与第一轮冲突' });
@@ -194,12 +207,13 @@ function createProjectTemplate(payload = {}, ownerId) {
       lightweightGeneration: Boolean(payload.automation?.lightweightGeneration),
       authorPersona: normalizeText(payload.automation?.authorPersona),
       platformStrategy: normalizePlatformStrategy(payload.automation?.platformStrategy, payload),
-      foreshadowingLedger: normalizeLedger(payload.automation?.foreshadowingLedger),
-      readerExpectations: normalizeLedger(payload.automation?.readerExpectations),
-      commercialBeatLedger: normalizeLedger(payload.automation?.commercialBeatLedger),
-      characterStateMemory: normalizeLedger(payload.automation?.characterStateMemory),
-      powerSystemLedger: normalizeLedger(payload.automation?.powerSystemLedger),
-      chapterFunctionCalendar: normalizeLedger(payload.automation?.chapterFunctionCalendar, 120),
+      foreshadowingLedger: normalizeAutomationLedger('foreshadowingLedger', payload.automation?.foreshadowingLedger),
+      readerExpectations: normalizeAutomationLedger('readerExpectations', payload.automation?.readerExpectations),
+      commercialBeatLedger: normalizeAutomationLedger('commercialBeatLedger', payload.automation?.commercialBeatLedger),
+      characterStateMemory: normalizeAutomationLedger('characterStateMemory', payload.automation?.characterStateMemory),
+      characterLongTermSummary: normalizeLedger(payload.automation?.characterLongTermSummary, 80),
+      powerSystemLedger: normalizeAutomationLedger('powerSystemLedger', payload.automation?.powerSystemLedger),
+      chapterFunctionCalendar: normalizeAutomationLedger('chapterFunctionCalendar', payload.automation?.chapterFunctionCalendar),
       targetProgress: payload.automation?.targetProgress || 0,
       lastCheckpointAt: payload.automation?.lastCheckpointAt || 0,
       checkpointReport: payload.automation?.checkpointReport || '',
@@ -339,18 +353,19 @@ function cleanAutomationLedgersAfterChapterDelete(automation = {}, deletedChapte
     const removedBefore = deleted.filter((deletedChapter) => deletedChapter < current).length;
     return Math.max(1, current - removedBefore);
   };
-  const cleanLedger = (items = []) => normalizeLedger(items)
+  const cleanLedger = (items = [], key = '') => normalizeLedger(items, automationLedgerLimits[key] || 80)
     .map((item) => ({ ...item, chapter: remapChapter(item.chapter) }))
     .filter((item) => item.chapter !== null);
 
   return {
     ...automation,
-    foreshadowingLedger: cleanLedger(automation.foreshadowingLedger),
-    readerExpectations: cleanLedger(automation.readerExpectations),
-    commercialBeatLedger: cleanLedger(automation.commercialBeatLedger),
-    characterStateMemory: cleanLedger(automation.characterStateMemory),
-    powerSystemLedger: cleanLedger(automation.powerSystemLedger),
-    chapterFunctionCalendar: cleanLedger(automation.chapterFunctionCalendar),
+    foreshadowingLedger: cleanLedger(automation.foreshadowingLedger, 'foreshadowingLedger'),
+    readerExpectations: cleanLedger(automation.readerExpectations, 'readerExpectations'),
+    commercialBeatLedger: cleanLedger(automation.commercialBeatLedger, 'commercialBeatLedger'),
+    characterStateMemory: cleanLedger(automation.characterStateMemory, 'characterStateMemory'),
+    characterLongTermSummary: buildCharacterLongTermSummary(cleanLedger(automation.characterStateMemory, 'characterStateMemory'), automation.characterLongTermSummary),
+    powerSystemLedger: cleanLedger(automation.powerSystemLedger, 'powerSystemLedger'),
+    chapterFunctionCalendar: cleanLedger(automation.chapterFunctionCalendar, 'chapterFunctionCalendar'),
   };
 }
 
@@ -447,12 +462,13 @@ function buildProjectPayload(project) {
       continuityMemory: normalizeText(project.automation?.continuityMemory),
       authorPersona: normalizeText(project.automation?.authorPersona),
       platformStrategy: normalizePlatformStrategy(project.automation?.platformStrategy, project),
-      foreshadowingLedger: normalizeLedger(project.automation?.foreshadowingLedger),
-      readerExpectations: normalizeLedger(project.automation?.readerExpectations),
-      commercialBeatLedger: normalizeLedger(project.automation?.commercialBeatLedger),
-      characterStateMemory: normalizeLedger(project.automation?.characterStateMemory),
-      powerSystemLedger: normalizeLedger(project.automation?.powerSystemLedger),
-      chapterFunctionCalendar: normalizeLedger(project.automation?.chapterFunctionCalendar, 120),
+      foreshadowingLedger: normalizeAutomationLedger('foreshadowingLedger', project.automation?.foreshadowingLedger),
+      readerExpectations: normalizeAutomationLedger('readerExpectations', project.automation?.readerExpectations),
+      commercialBeatLedger: normalizeAutomationLedger('commercialBeatLedger', project.automation?.commercialBeatLedger),
+      characterStateMemory: normalizeAutomationLedger('characterStateMemory', project.automation?.characterStateMemory),
+      characterLongTermSummary: normalizeLedger(project.automation?.characterLongTermSummary, 80),
+      powerSystemLedger: normalizeAutomationLedger('powerSystemLedger', project.automation?.powerSystemLedger),
+      chapterFunctionCalendar: normalizeAutomationLedger('chapterFunctionCalendar', project.automation?.chapterFunctionCalendar),
       targetProgress: Number(project.automation?.targetProgress) || 0,
       lastCheckpointAt: Number(project.automation?.lastCheckpointAt) || 0,
       checkpointReport: normalizeText(project.automation?.checkpointReport) || checkpointReports.at(-1)?.report || '',
@@ -484,6 +500,7 @@ function resetAutomationRuntimeState(automation = {}, progressNotes = '已清空
     readerExpectations: [],
     commercialBeatLedger: [],
     characterStateMemory: [],
+    characterLongTermSummary: [],
     powerSystemLedger: [],
     chapterFunctionCalendar: [],
     targetProgress: 0,
@@ -1464,6 +1481,7 @@ function formatLedgerItems(title, items = [], formatter = (item) => String(item)
 function buildAutomationMemoryGuide(project = {}, automation = {}) {
   return [
     '自动写作策略记忆（写作前使用，正文不要输出）：',
+    formatLedgerItems('角色长期摘要：', automation.characterLongTermSummary, (item) => `- ${item.character || '角色'}｜最近第${item.lastChapter || '?'}章｜${item.summary || item.state || item.text || ''}`, '暂无长期角色摘要'),
     formatLedgerItems('伏笔台账：', automation.foreshadowingLedger, (item) => `- 第${item.chapter || '?'}章｜${item.status || '记录'}｜${item.item || item.text || ''}｜建议：${item.next || item.payoff || '后续推进'}`),
     formatLedgerItems('读者期待账本：', automation.readerExpectations, (item) => `- 第${item.chapter || '?'}章｜${item.status || '待回应'}｜${item.expectation || item.text || ''}`),
     formatLedgerItems('爽点/奖励账本：', automation.commercialBeatLedger, (item) => `- 第${item.chapter || '?'}章｜${item.type || '爽点'}｜${item.beat || item.text || ''}`),
@@ -1482,13 +1500,13 @@ function inferCommercialBeat(chapter = {}, card = {}) {
   return '阶段推进爽';
 }
 
-function buildAutomationLedgerUpdate({ chapters = [], cards = [], startChapter = 1, previousAutomation = {} } = {}) {
-  const foreshadowingLedger = normalizeLedger(previousAutomation.foreshadowingLedger);
-  const readerExpectations = normalizeLedger(previousAutomation.readerExpectations);
-  const commercialBeatLedger = normalizeLedger(previousAutomation.commercialBeatLedger);
-  const characterStateMemory = normalizeLedger(previousAutomation.characterStateMemory);
-  const powerSystemLedger = normalizeLedger(previousAutomation.powerSystemLedger);
-  const chapterFunctionCalendar = normalizeLedger(previousAutomation.chapterFunctionCalendar, 120);
+function buildAutomationLedgerUpdate({ chapters = [], cards = [], startChapter = 1, previousAutomation = {}, projectCharacters = [] } = {}) {
+  const foreshadowingLedger = normalizeAutomationLedger('foreshadowingLedger', previousAutomation.foreshadowingLedger);
+  const readerExpectations = normalizeAutomationLedger('readerExpectations', previousAutomation.readerExpectations);
+  const commercialBeatLedger = normalizeAutomationLedger('commercialBeatLedger', previousAutomation.commercialBeatLedger);
+  const characterStateMemory = normalizeAutomationLedger('characterStateMemory', previousAutomation.characterStateMemory);
+  const powerSystemLedger = normalizeAutomationLedger('powerSystemLedger', previousAutomation.powerSystemLedger);
+  const chapterFunctionCalendar = normalizeAutomationLedger('chapterFunctionCalendar', previousAutomation.chapterFunctionCalendar);
 
   chapters.filter(Boolean).forEach((chapter, idx) => {
     const chapterNumber = startChapter + idx;
@@ -1501,7 +1519,7 @@ function buildAutomationLedgerUpdate({ chapters = [], cards = [], startChapter =
     }
     readerExpectations.push({ chapter: chapterNumber, status: '新增/待回应', expectation: card.hook || card.readerExpectation || summary.slice(0, 90) });
     commercialBeatLedger.push({ chapter: chapterNumber, type: inferCommercialBeat(chapter, card), beat: card.endingDelivery || card.hook || summary.slice(0, 90) });
-    const mentionedCharacters = (content.match(/魏杰|阿米娅|凯尔希|博士|K/g) || []).filter((value, pos, arr) => arr.indexOf(value) === pos).slice(0, 4);
+    const mentionedCharacters = extractLedgerCharacters({ content, summary, card, projectCharacters }).slice(0, 4);
     mentionedCharacters.forEach((character) => characterStateMemory.push({ chapter: chapterNumber, character, state: summary.slice(0, 90) }));
     if (/系统|任务|奖励|信标器|协议|搜打撤|物资|资源|装备/.test(`${summary}\n${content}`)) {
       powerSystemLedger.push({ chapter: chapterNumber, rule: summary.slice(0, 100), limit: '不得新增未铺垫能力，系统反馈必须推动人物动作' });
@@ -1510,13 +1528,76 @@ function buildAutomationLedgerUpdate({ chapters = [], cards = [], startChapter =
   });
 
   return {
-    foreshadowingLedger: normalizeLedger(foreshadowingLedger),
-    readerExpectations: normalizeLedger(readerExpectations),
-    commercialBeatLedger: normalizeLedger(commercialBeatLedger),
-    characterStateMemory: normalizeLedger(characterStateMemory),
-    powerSystemLedger: normalizeLedger(powerSystemLedger),
-    chapterFunctionCalendar: normalizeLedger(chapterFunctionCalendar, 120),
+    foreshadowingLedger: normalizeAutomationLedger('foreshadowingLedger', foreshadowingLedger),
+    readerExpectations: normalizeAutomationLedger('readerExpectations', readerExpectations),
+    commercialBeatLedger: normalizeAutomationLedger('commercialBeatLedger', commercialBeatLedger),
+    characterStateMemory: normalizeAutomationLedger('characterStateMemory', characterStateMemory),
+    characterLongTermSummary: buildCharacterLongTermSummary(characterStateMemory, previousAutomation.characterLongTermSummary),
+    powerSystemLedger: normalizeAutomationLedger('powerSystemLedger', powerSystemLedger),
+    chapterFunctionCalendar: normalizeAutomationLedger('chapterFunctionCalendar', chapterFunctionCalendar),
   };
+}
+
+function buildCharacterLongTermSummary(characterStateMemory = [], previousSummary = []) {
+  const grouped = new Map();
+  normalizeAutomationLedger('characterStateMemory', characterStateMemory).forEach((item) => {
+    const character = normalizeText(item.character || '角色');
+    if (!character) return;
+    const list = grouped.get(character) || [];
+    list.push(item);
+    grouped.set(character, list);
+  });
+  const previousByName = new Map(normalizeLedger(previousSummary, 80).map((item) => [normalizeText(item.character), item]));
+  const updatedNames = new Set(grouped.keys());
+  const updated = [...grouped.entries()].map(([character, items]) => {
+    const latest = items.at(-1) || {};
+    const recent = items.slice(-6).map((item) => normalizeText(item.state || item.text || '').replace(/[。！？!?]$/g, '')).filter(Boolean);
+    const compact = [...new Set(recent)].slice(-4).join('；');
+    return {
+      character,
+      lastChapter: latest.chapter || previousByName.get(character)?.lastChapter || 0,
+      summary: compact || previousByName.get(character)?.summary || '',
+    };
+  }).filter((item) => item.summary);
+  const preserved = [...previousByName.values()].filter((item) => item.character && !updatedNames.has(normalizeText(item.character)));
+  return [...preserved, ...updated].slice(-80);
+}
+
+function extractLedgerCharacters({ content = '', summary = '', card = {}, projectCharacters = [] } = {}) {
+  const source = normalizeText([content, summary].join('\n'));
+  const cardCast = normalizeText(card.cast || '');
+  const candidates = new Set();
+  (projectCharacters || []).forEach((character) => {
+    const name = normalizeText(character?.name || character).replace(/[（(].*?[）)]/g, '').trim();
+    if (name) candidates.add(name);
+  });
+  cardCast.split(/[\n；;]/).forEach((line) => {
+    const head = normalizeText(line).split(/[：:]/)[0] || '';
+    head.split(/[、,，/]/).forEach((name) => {
+      const cleaned = name.replace(/[（(].*?[）)]/g, '').trim();
+      if (cleaned && cleaned.length <= 8 && !/主角|系统|手下|跟班|帮手|村汉|少年|少女|老妇人|小孩|仅被提及|正式出场/.test(cleaned)) candidates.add(cleaned);
+    });
+  });
+  let matched = [...candidates].filter((name) => source.includes(name) || cardCast.includes(name));
+  if (!matched.length) {
+    const addFallbackName = (rawName = '') => {
+      const cleaned = normalizeText(rawName)
+        .replace(/^(?:那个|这个|门外|屋里|桌下|村里|隔壁|少年|少女|老妇人|小孩)/, '')
+        .replace(/(?:推|看|躲在|走|问|说|喊|骂|从|把|被|要|想|伸手|咬牙|沉默|进来|出去|过来|过去)$/g, '')
+        .trim();
+      if (cleaned.length < 2 || cleaned.length > 4) return;
+      if (/^(系统|任务|奖励|正文|摘要|章节|本章|蓝图|灵气|魔法|少女|修仙|世界|村里|门外|屋里|桌下|门进|少年|老妇|小孩)$/.test(cleaned)) return;
+      candidates.add(cleaned);
+    };
+    const actionNamePattern = /([\u4e00-\u9fa5]{2,5})(?:说|问|喊|骂|点头|摇头|推|看|躲|走|伸手|咬牙|沉默|从|把|被|要|想)/g;
+    let actionMatch = null;
+    while ((actionMatch = actionNamePattern.exec(source))) addFallbackName(actionMatch[1]);
+    source.match(/[\u4e00-\u9fa5]{2,4}/g)?.forEach((name) => {
+      if (source.split(name).length > 2 || /[一二三四五六七八九十]\b/.test(name)) addFallbackName(name);
+    });
+    matched = [...candidates].filter((name) => source.includes(name) || cardCast.includes(name));
+  }
+  return matched;
 }
 
 function buildReaderExpectationGuide() {
@@ -1527,6 +1608,38 @@ function buildReaderExpectationGuide() {
     '3. 本章至少回应一个读者预期，同时制造一个新的下一章期待。',
     '4. 爽点可以是任务确认、奖励到账、线索反转、主角做出选择、敌人露出破绽、代价浮现，不必每章大战。',
   ].join('\n');
+}
+
+function hasCompleteMasterPlan(text = '') {
+  const normalized = normalizeText(text);
+  if (/【\s*蓝图完\s*】/.test(normalized)) return true;
+  if (/先展示前\s*\d+\s*卷|如需.*(?:继续|补充|展开)|后续.*(?:再|另行).*展开/.test(normalized.slice(-1000))) return false;
+  if (/[，、：；（(]$/.test(normalized.trim())) return false;
+  return normalized.length >= 6000 && /主要人物卡|人物：/.test(normalized) && /长线伏笔|伏笔/.test(normalized) && /商业化连载建议|连载建议/.test(normalized);
+}
+
+async function completeMasterPlanIfNeeded({ apiKey, model, baseUrl, project, automation, prompt, currentText, signal }) {
+  let text = normalizeText(currentText);
+  const continuations = [];
+  for (let attempt = 1; attempt <= 2 && !hasCompleteMasterPlan(text); attempt += 1) {
+    const continuationPrompt = [
+      '下面是一份被截断或未完整收尾的长篇小说蓝图。请从断点处继续补全，不要重写已有内容。',
+      '必须补齐所有未完成部分，尤其是剩余分卷规划、长线伏笔、商业化连载建议和主要人物卡。',
+      '如果前文说“先展示前8卷”或类似说法，本次必须继续写剩余卷，不要再说需要用户另行要求。',
+      '全部补完后，最后单独输出一行：【蓝图完】。',
+      '原始生成要求：',
+      prompt.slice(0, 8000),
+      '已生成蓝图全文：',
+      text,
+      '请只输出续写部分，不要复述已生成内容。',
+    ].join('\n\n');
+    const next = await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.72, userPrompt: continuationPrompt, maxTokens: 8192, signal, timeoutMs: 300000 });
+    const cleanedNext = normalizeText(next).trim();
+    if (!cleanedNext) break;
+    continuations.push(cleanedNext);
+    text = `${text}\n\n${cleanedNext}`;
+  }
+  return { text, continuations, complete: hasCompleteMasterPlan(text) };
 }
 
 function buildChapterCardControlGuide() {
@@ -3387,7 +3500,7 @@ function getAutomationReviewPause(warnings = []) {
   return (warnings || []).some(isAutomationReviewWarning);
 }
 
-async function generateSupplementChapter({ apiKey, model, baseUrl, project, automation, card, chapterNumber, previousChapter, nextChapter, defaultVolumeId, reason = '', signal }) {
+async function generateSupplementChapter({ apiKey, model, baseUrl, project, automation, card, chapterNumber, previousChapter, nextChapter, defaultVolumeId, reason = '', signal, onToken }) {
   const prompt = promptComposer.buildRepairPrompt([
     '请只补写一章，且必须严格输出单章格式：### 第X章 标题 / 摘要：... / 正文：...',
     '这一章必须按真人写作模块补成可读小说，不是填补缺失字段，也不能写成占位内容。',
@@ -3419,7 +3532,9 @@ async function generateSupplementChapter({ apiKey, model, baseUrl, project, auto
     '请直接输出，不要解释。',
   ]);
 
-  const text = await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.82, userPrompt: prompt, signal });
+  const text = onToken
+    ? await callDeepSeekStream({ apiKey, model, baseUrl, temperature: 0.82, userPrompt: prompt, signal, timeoutMs: 300000, onToken })
+    : await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.82, userPrompt: prompt, signal });
   const sections = extractGeneratedSections(text).slice(0, 1);
   if (!sections.length) {
     const looseChapter = makeSingleChapterFromLooseText(text, { chapterNumber, defaultVolumeId });
@@ -5500,7 +5615,7 @@ async function buildChapterBeatPlan({ apiKey, model, baseUrl, project, automatio
   return buildFallbackRhythmPlan(card, chapterNumber);
 }
 
-async function resolveGeneratedChapters({ apiKey, model, baseUrl, project, automation, sections, plannedCards, startChapter, batchCount, defaultVolumeId, sourceText, reason = '', signal }) {
+async function resolveGeneratedChapters({ apiKey, model, baseUrl, project, automation, sections, plannedCards, startChapter, batchCount, defaultVolumeId, sourceText, reason = '', signal, onSupplementToken, onSupplementPhase }) {
   const chapters = importAiGeneratedChapters(sourceText, { startChapter, batchCount, defaultVolumeId });
   const texts = [sourceText];
   const warnings = [];
@@ -5518,6 +5633,7 @@ async function resolveGeneratedChapters({ apiKey, model, baseUrl, project, autom
     const previousChapter = idx === 0 ? project.chapters.at(-1) : chapters[idx - 1] || project.chapters.at(-1);
     const nextChapter = plannedCards[idx + 1] ? { title: plannedCards[idx + 1].title, summary: plannedCards[idx + 1].summary } : null;
     try {
+      onSupplementPhase?.(`正在流式补写第${startChapter + idx}章`);
       const supplement = await generateSupplementChapter({
         apiKey,
         model,
@@ -5531,6 +5647,7 @@ async function resolveGeneratedChapters({ apiKey, model, baseUrl, project, autom
         defaultVolumeId,
         reason: reason || '上一轮未产出有效正文',
         signal,
+        onToken: onSupplementToken,
       });
       chapters[idx] = isInvalidGeneratedChapter(supplement.chapter) ? null : supplement.chapter;
       texts.push(supplement.text);
@@ -5604,9 +5721,9 @@ async function resolveGeneratedChapters({ apiKey, model, baseUrl, project, autom
   };
 }
 
-async function generateAutomationChapter({ apiKey, model, baseUrl, project, automation, card, nextCard, chapterNumber, defaultVolumeId, signal, beatPlan = '' }) {
+async function generateAutomationChapter({ apiKey, model, baseUrl, project, automation, card, nextCard, chapterNumber, defaultVolumeId, signal, beatPlan = '', onToken, onPhase }) {
   if (!aiUsageStorage.getStore()) {
-    const tracked = await withAiUsageTracking(() => generateAutomationChapter({ apiKey, model, baseUrl, project, automation, card, nextCard, chapterNumber, defaultVolumeId, signal, beatPlan }));
+    const tracked = await withAiUsageTracking(() => generateAutomationChapter({ apiKey, model, baseUrl, project, automation, card, nextCard, chapterNumber, defaultVolumeId, signal, beatPlan, onToken, onPhase }));
     return {
       ...tracked.result,
       aiUsage: tracked.usage,
@@ -5874,7 +5991,11 @@ async function generateAutomationChapter({ apiKey, model, baseUrl, project, auto
     '首稿要求：只写这一章，不要写下一章，不要输出解释。正文控制在2000到3200字。让人物处在麻烦里，让信息从动作和对话中露出，让系统提示改变选择，让章末停在具体动作或路线选择前。',
   ]);
 
-  const text = await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.68, userPrompt: prompt, maxTokens: 8192, signal });
+  onPhase?.(`正在生成第${chapterNumber}章质量首稿`);
+  const text = onToken
+    ? await callDeepSeekStream({ apiKey, model, baseUrl, temperature: 0.68, userPrompt: prompt, maxTokens: 8192, signal, timeoutMs: 300000, onToken })
+    : await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.68, userPrompt: prompt, maxTokens: 8192, signal });
+  onPhase?.(`正在解析第${chapterNumber}章质量首稿`);
   const resolved = await resolveGeneratedChapters({
     apiKey,
     model,
@@ -5889,6 +6010,8 @@ async function generateAutomationChapter({ apiKey, model, baseUrl, project, auto
     sourceText: text,
     reason: `逐章生成第${chapterNumber}章时章节边界不完整`,
     signal,
+    onSupplementToken: onToken,
+    onSupplementPhase: onPhase,
   });
 
   return {
@@ -5899,7 +6022,7 @@ async function generateAutomationChapter({ apiKey, model, baseUrl, project, auto
   };
 }
 
-async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, project, automation, card, nextCard, chapterNumber, defaultVolumeId, signal }) {
+async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, project, automation, card, nextCard, chapterNumber, defaultVolumeId, signal, onToken, onPhase }) {
   const previousChapter = project.chapters?.filter((chapter, idx) => !isBlankStarterChapter(chapter, idx)).at(-1) || null;
   const prompt = promptComposer.buildGenerationPrompt([
     '轻量生成模式：你是中文网文作者，只写当前这一章，不解释，不输出写作计划。',
@@ -5952,7 +6075,11 @@ async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, pr
     '只写本章章节卡允许的事件；不要提前写后续章节正文；章末停在当前章节卡钩子或下一步选择上。',
   ]);
 
-  const text = await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.68, userPrompt: prompt, maxTokens: 8192, signal, timeoutMs: 300000 });
+  onPhase?.(`正在生成第${chapterNumber}章轻量首稿`);
+  const text = onToken
+    ? await callDeepSeekStream({ apiKey, model, baseUrl, temperature: 0.68, userPrompt: prompt, maxTokens: 8192, signal, timeoutMs: 300000, onToken })
+    : await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.68, userPrompt: prompt, maxTokens: 8192, signal, timeoutMs: 300000 });
+  onPhase?.(`正在解析第${chapterNumber}章轻量首稿`);
   const resolved = await resolveGeneratedChapters({
     apiKey,
     model,
@@ -5967,6 +6094,8 @@ async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, pr
     sourceText: text,
     reason: `轻量生成第${chapterNumber}章时章节边界不完整`,
     signal,
+    onSupplementToken: onToken,
+    onSupplementPhase: onPhase,
   });
   const chapter = resolved.chapters[0] ? withChapterNumber({
     ...resolved.chapters[0],
@@ -6204,7 +6333,7 @@ async function generateAndPersistQualityChapters({ req, projectIndex, project, a
         ? [...generatedChapters]
         : [...project.chapters, ...generatedChapters];
       const batchWords = generatedChapters.reduce((sum, chapter) => sum + countWords(chapter.content), 0);
-      const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: generatedChapters, cards: plannedCards.slice(0, generatedChapters.length), startChapter, previousAutomation: automation });
+      const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: generatedChapters, cards: plannedCards.slice(0, generatedChapters.length), startChapter, previousAutomation: automation, projectCharacters: project.characters || [] });
       const nextCount = initialState.writtenCount + generatedChapters.length;
       const reachCheckpoint = stopAtCheckpoint && nextCount > 0 && nextCount % 20 === 0;
       const reachedTarget = targetProgress ? nextCount >= targetProgress : generatedChapters.length >= batchCount;
@@ -7175,10 +7304,14 @@ app.post('/api/projects/:id/automation/plan', auth, async (req, res) => {
     await writeAiDebugLog('automation.plan.ai_start', { model, baseUrl, personaTimeoutMs: 180000, planTimeoutMs: 300000 });
     const [personaText, text] = await Promise.all([
       callDeepSeek({ apiKey, model, baseUrl, temperature: 0.85, userPrompt: personaPrompt, signal, timeoutMs: 180000 }),
-      callDeepSeek({ apiKey, model, baseUrl, temperature: 0.95, userPrompt: prompt, signal, timeoutMs: 300000 }),
+      callDeepSeek({ apiKey, model, baseUrl, temperature: 0.95, userPrompt: `${prompt}\n\n重要：蓝图全部完成后，最后必须单独输出一行：【蓝图完】。`, maxTokens: 8192, signal, timeoutMs: 300000 }),
     ]);
-    await writeAiDebugLog('automation.plan.ai_done', { model, personaLen: personaText.length, planLen: text.length });
-    const characters = parseCharacterCards(text);
+    const completedPlan = await completeMasterPlanIfNeeded({ apiKey, model, baseUrl, project, automation, prompt, currentText: text, signal });
+    await writeAiDebugLog('automation.plan.ai_done', { model, personaLen: personaText.length, planLen: completedPlan.text.length, continuationCount: completedPlan.continuations.length, complete: completedPlan.complete });
+    if (!completedPlan.complete) {
+      throw new Error('长篇蓝图疑似被截断，自动续写补全后仍未完整收尾。已阻止覆盖旧蓝图，请重试或降低参考章节数。');
+    }
+    const characters = parseCharacterCards(completedPlan.text);
     const nextProject = buildProjectPayload({
       ...project,
       characters: characters.length ? characters : project.characters,
@@ -7190,14 +7323,14 @@ app.post('/api/projects/:id/automation/plan', auth, async (req, res) => {
         targetChapters,
         averageChapterWords: Math.ceil(minimumWords / targetChapters),
         authorPersona: normalizeAuthorPersonaText(personaText),
-        masterPlan: text,
+        masterPlan: completedPlan.text,
         status: 'planned',
       },
     });
     req.db.projects[index] = nextProject;
     await writeDb(req.db);
-    await writeAiDebugLog('automation.plan.saved', { projectTitle: nextProject.title, masterPlanLen: text.length, authorPersonaLen: normalizeAuthorPersonaText(personaText).length });
-    res.json({ text: `${personaText}\n\n${text}`, project: nextProject, authorPersona: normalizeAuthorPersonaText(personaText) });
+    await writeAiDebugLog('automation.plan.saved', { projectTitle: nextProject.title, masterPlanLen: completedPlan.text.length, authorPersonaLen: normalizeAuthorPersonaText(personaText).length, complete: completedPlan.complete });
+    res.json({ text: `${personaText}\n\n${completedPlan.text}`, project: nextProject, authorPersona: normalizeAuthorPersonaText(personaText), complete: completedPlan.complete });
   } catch (error) {
     await writeAiDebugLog('automation.plan.failed', { model, baseUrl, error: error instanceof Error ? error.message : String(error) });
     res.status(500).json({ message: error instanceof Error ? error.message : '长篇规划失败' });
@@ -7339,7 +7472,7 @@ app.post('/api/projects/:id/automation/generate-current', auth, async (req, res)
     }, targetChapterNumber));
 
     const nextChapters = chapters.map((chapter, chapterIndex) => (chapterIndex === selectedIndex ? generatedChapter : chapter));
-    const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: [generatedChapter], cards: [card], startChapter: targetChapterNumber, previousAutomation: automation });
+    const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: [generatedChapter], cards: [card], startChapter: targetChapterNumber, previousAutomation: automation, projectCharacters: project.characters || [] });
     const previousContentWords = countWords(existingChapter.content || '');
     const contentWordDelta = countWords(generatedChapter.content || '') - previousContentWords;
     const nextProject = buildProjectPayload({
@@ -7446,7 +7579,7 @@ app.post('/api/projects/:id/automation/generate-current/stream', auth, async (re
     const existingChapter = chapters[selectedIndex] || {};
     const generatedChapter = createChapter(withChapterNumber({ ...existingChapter, ...parsed, id: existingChapter.id || parsed.id, volumeId: parsed.volumeId || card.volumeId || existingChapter.volumeId || project.volumes[0]?.id || '', content: repairDenseRhetoricLocally(repairUrgentCommandBurstsLocally(repairStandaloneTacticalLabelsLocally(repairSystemMessageLocally(stripMarkdownNoise(parsed.content || ''))))), summary: resolveStoredChapterSummary(card, parsed.content || ''), status: existingChapter.status || parsed.status || 'draft', updatedAt: now() }, targetChapterNumber));
     const nextChapters = chapters.map((chapter, chapterIndex) => (chapterIndex === selectedIndex ? generatedChapter : chapter));
-    const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: [generatedChapter], cards: [card], startChapter: targetChapterNumber, previousAutomation: automation });
+    const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: [generatedChapter], cards: [card], startChapter: targetChapterNumber, previousAutomation: automation, projectCharacters: project.characters || [] });
     const contentWordDelta = countWords(generatedChapter.content || '') - countWords(existingChapter.content || '');
     const nextProject = buildProjectPayload({ ...project, chapters: nextChapters, automation: { ...automation, ...ledgerUpdate, continuityMemory: buildContinuityMemoryUpdate([generatedChapter], targetChapterNumber, automation.continuityMemory), totalGeneratedWords: Math.max(0, (automation.totalGeneratedWords || 0) + contentWordDelta), status: automation.status === 'idle' ? 'paused' : automation.status, progressNotes: `已用轻量流式生成第 ${targetChapterNumber} 章` } });
     if (signal?.aborted) throw new Error('AI 请求已中断');
@@ -7504,6 +7637,93 @@ app.post('/api/projects/:id/automation/generate-batch', auth, async (req, res) =
     res.json({ text: [resolved.text, ...(resolved.warnings || [])].filter(Boolean).join('\n\n'), chapters: resolved.chapters, project: resolved.project, replacedBlankStarter: resolved.replacedBlankStarter, warnings: resolved.warnings || [], pausedForReview: resolved.pausedForReview });
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : '批量生成失败' });
+  }
+});
+
+app.post('/api/projects/:id/automation/generate-next/stream', auth, async (req, res) => {
+  const send = startNdjsonStream(res);
+  try {
+    const index = req.db.projects.findIndex((item) => item.id === req.params.id && item.ownerId === req.user.id);
+    if (index === -1) throw new Error('作品不存在');
+    const { apiKey, model, baseUrl } = resolveAiModelConfig(req.body, 'writing');
+    const { targetChapter = null, targetProgress = null, stopAtCheckpoint = false, lightweight = false } = req.body;
+    const project = req.db.projects[index];
+    const automation = project.automation || {};
+    if (!apiKey) throw new Error('缺少 DeepSeek API Key');
+    if (!automation.masterPlan) throw new Error('请先生成长篇规划');
+    if (automation.waitingForReview) throw new Error('已到检查点或审校暂停，请先确认是否继续');
+
+    const writeState = getAutomationWriteState(project);
+    const chapterNumber = writeState.nextChapterStart;
+    if (targetChapter && Number(targetChapter) !== chapterNumber) throw new Error(`章节进度已变化，当前下一章是第${chapterNumber}章`);
+    if (targetProgress && chapterNumber > Number(targetProgress)) throw new Error('已达到目标进度');
+    assertEnoughChapterCards({ automation, startChapter: chapterNumber, batchCount: 1 });
+
+    const card = (automation.chapterCards || [])[chapterNumber - 1];
+    const nextCard = (automation.chapterCards || [])[chapterNumber] || null;
+    const signal = getRequestAbortSignal(req);
+    send({ type: 'phase', text: `正在流式生成第${chapterNumber}章草稿`, chapterNumber });
+
+    const result = await (lightweight ? generateLightweightAutomationChapter : generateAutomationChapter)({
+      apiKey,
+      model,
+      baseUrl,
+      project,
+      automation,
+      card,
+      nextCard,
+      chapterNumber,
+      defaultVolumeId: project.volumes[0]?.id || '',
+      signal,
+      onPhase: (text) => send({ type: 'phase', text, chapterNumber }),
+      onToken: (token) => send({ type: 'token', text: token, chapterNumber }),
+    });
+    send({ type: 'phase', text: `正在解析和保存第${chapterNumber}章`, chapterNumber });
+    if (signal?.aborted) throw new Error('AI 请求已中断');
+    if (!result.chapter || isInvalidGeneratedChapter(result.chapter)) throw new Error(`AI 未返回可写入第${chapterNumber}章正文`);
+    const generatedChapter = withChapterNumber({
+      ...result.chapter,
+      volumeId: result.chapter.volumeId || card.volumeId || project.volumes[0]?.id || '',
+      content: stripMarkdownNoise(result.chapter.content || ''),
+      summary: resolveStoredChapterSummary(card, result.chapter.content || ''),
+    }, chapterNumber);
+
+    const generatedChapters = [generatedChapter];
+    const chaptersForProject = writeState.replaceBlankStarter ? generatedChapters : [...project.chapters, ...generatedChapters];
+    const batchWords = countWords(generatedChapter.content || '');
+    const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: generatedChapters, cards: [card], startChapter: chapterNumber, previousAutomation: automation, projectCharacters: project.characters || [] });
+    const nextCount = writeState.writtenCount + 1;
+    const reachCheckpoint = stopAtCheckpoint && nextCount > 0 && nextCount % 20 === 0;
+    const reachedTarget = targetProgress ? nextCount >= Number(targetProgress) : true;
+    const warnings = result.warnings || [];
+    const shouldPauseForReview = getAutomationReviewPause(warnings);
+    const nextProject = buildProjectPayload({
+      ...project,
+      chapters: chaptersForProject,
+      automation: {
+        ...automation,
+        ...ledgerUpdate,
+        continuityMemory: buildContinuityMemoryUpdate(generatedChapters, chapterNumber, automation.continuityMemory),
+        totalGeneratedWords: (automation.totalGeneratedWords || 0) + batchWords,
+        targetProgress: targetProgress || automation.targetProgress,
+        waitingForReview: reachCheckpoint || shouldPauseForReview,
+        status: shouldPauseForReview ? 'review' : reachCheckpoint ? 'checkpoint' : reachedTarget ? 'paused' : 'writing',
+        progressNotes: warnings.length
+          ? `已流式写到第 ${nextCount} 章，但有警告：${warnings.join('；')}`
+          : reachCheckpoint
+            ? `已流式写到第 ${nextCount} 章，触发 20 章检查点`
+            : `已流式写到第 ${nextCount} 章`,
+      },
+    });
+    if (signal?.aborted) throw new Error('AI 请求已中断');
+    req.db.projects[index] = nextProject;
+    await writeDb(req.db);
+    send({ type: 'saved', text: `第${chapterNumber}章已保存`, chapter: generatedChapter, chapters: generatedChapters, project: nextProject, output: result.text || generatedChapter.content || '', warnings, reachedCheckpoint: reachCheckpoint, pausedForReview: shouldPauseForReview, replacedBlankStarter: writeState.replaceBlankStarter });
+    send({ type: 'done' });
+    res.end();
+  } catch (error) {
+    send({ type: 'error', message: error instanceof Error ? error.message : '自动写作流式生成失败' });
+    res.end();
   }
 });
 
@@ -7964,6 +8184,48 @@ app.post('/api/projects/:id/automation/reset-runtime', auth, async (req, res) =>
   req.db.projects[index] = nextProject;
   await writeDb(req.db);
   res.json({ project: nextProject });
+});
+
+app.post('/api/projects/:id/automation/rebuild-ledgers', auth, async (req, res) => {
+  const index = req.db.projects.findIndex((item) => item.id === req.params.id && item.ownerId === req.user.id);
+  if (index === -1) return res.status(404).json({ message: '作品不存在' });
+
+  const project = req.db.projects[index];
+  const automation = project.automation || {};
+  const chapters = (project.chapters || []).filter((chapter, chapterIndex) => !isBlankStarterChapter(chapter, chapterIndex));
+  const cards = automation.chapterCards || [];
+  let rebuilt = {
+    foreshadowingLedger: [],
+    readerExpectations: [],
+    commercialBeatLedger: [],
+    characterStateMemory: [],
+    characterLongTermSummary: [],
+    powerSystemLedger: [],
+    chapterFunctionCalendar: [],
+  };
+
+  chapters.forEach((chapter, indexInWritten) => {
+    const chapterNumber = getChapterNumberFromTitle(chapter.title) || indexInWritten + 1;
+    rebuilt = buildAutomationLedgerUpdate({
+      chapters: [chapter],
+      cards: [cards[chapterNumber - 1] || {}],
+      startChapter: chapterNumber,
+      previousAutomation: rebuilt,
+      projectCharacters: project.characters || [],
+    });
+  });
+
+  const nextProject = buildProjectPayload({
+    ...project,
+    automation: {
+      ...automation,
+      ...rebuilt,
+      progressNotes: `已根据现有 ${chapters.length} 章正文和章节卡重建自动写作台账`,
+    },
+  });
+  req.db.projects[index] = nextProject;
+  await writeDb(req.db);
+  res.json({ project: nextProject, rebuilt });
 });
 
 app.post('/api/projects/:id/automation/repair-range', auth, async (req, res) => {

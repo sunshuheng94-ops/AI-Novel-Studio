@@ -153,6 +153,16 @@ const platformModeOptions = [
   { value: 'ciweimao', label: '刺猬猫' },
 ];
 
+const automationLedgerLimits = {
+  foreshadowingLedger: 240,
+  readerExpectations: 160,
+  commercialBeatLedger: 160,
+  characterStateMemory: 300,
+  characterLongTermSummary: 80,
+  powerSystemLedger: 200,
+  chapterFunctionCalendar: 240,
+};
+
 function getPlatformStrategy(project) {
   return project?.automation?.platformStrategy || {
     primary: 'ciweimao',
@@ -163,15 +173,58 @@ function getPlatformStrategy(project) {
   };
 }
 
-const appVersion = '1.7.7';
+const appVersion = '1.8.1';
 
 const changelogItems = [
+  {
+    version: '1.8.1',
+    date: '2026-05-29',
+    title: '长篇记忆容量与角色长期摘要',
+    changes: [
+      '长篇自动写作台账扩容：角色记忆300条、伏笔240条、期待160条、爽点160条、系统规则200条、功能日历240条。',
+      '新增角色长期摘要，按角色压缩长期关系和口吻变化，写作时会与最近记忆一起带入。',
+      '自动写作进度区改为台账容量卡片，显示当前数量/上限和进度条，方便判断长篇记忆是否接近满额。',
+    ],
+  },
+  {
+    version: '1.8.0',
+    date: '2026-05-29',
+    title: '蓝图完整性守门',
+    changes: [
+      '长篇蓝图生成新增完整结束标记，模型必须输出【蓝图完】才会视为完整蓝图。',
+      '如果蓝图疑似被截断，系统会自动继续请求模型补全剩余内容，避免只保存前半段规划。',
+      '自动补全后仍不完整时会阻止覆盖旧蓝图，并提示重试或降低参考章节数。',
+    ],
+  },
+  {
+    version: '1.7.9',
+    date: '2026-05-27',
+    title: '蓝图可手动保存，角色记忆台账修复',
+    changes: [
+      '长篇蓝图改为可编辑文本框，用户可以手动修改并保存，后续分卷、章节卡、自动写作和检查点都会读取新版蓝图。',
+      '修复角色记忆台账只识别旧项目固定角色名的问题，现在会从角色库、章节卡出场人物和正文中抽取角色。',
+      '自动写作中心新增“重建自动写作台账”，可根据已有正文和章节卡补回角色记忆、伏笔、期待、爽点和系统规则。',
+    ],
+  },
+  {
+    version: '1.7.8',
+    date: '2026-05-27',
+    title: '逐章流式自动写作与二次元工作台',
+    changes: [
+      '继续自动写作和写到指定进度改为逐章流式：每章 token 实时返回，保存后才进入下一章。',
+      '轻量模式复用原有轻量生成逻辑，只把首稿和补写兜底切换为流式，尽量保持原有质量保险。',
+      '自动写作中心重排为 Start / Plan / Quest / Maintain 任务卡片，按钮层级和流程更清楚。',
+      '非概览页新增右下角 Live2D 助手坞，靠近时自动虚化且不遮挡页面点击。',
+      '桌面开发启动优先读取安装版数据目录，方便预览真实已写章节。',
+    ],
+  },
   {
     version: '1.7.7',
     date: '2026-05-27',
     title: '升级启动指南与自然读感守门',
     changes: [
       '重做进入软件后的使用指导弹窗，按当前版本的真实工作流展示模型配置、蓝图、章节卡、流式预览、轻量模式和发布检查。',
+      '继续自动写作和写到指定进度改为逐章流式生成：每章 token 实时返回，单章完整结束后再解析、清理并保存。',
       '继续压低旁白里的“否定、否定、再解释/升格”和三项名词排比句式，减少生硬作者总结感。',
       '对话自然度检测改为更温和的密度触发，保留紧急短句，优先处理连续清单式命令和状态播报。',
     ],
@@ -843,9 +896,11 @@ export default function App() {
   const [showWelcomeGuide, setShowWelcomeGuide] = useState(false);
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [assistantPose, setAssistantPose] = useState('default');
+  const [assistantDockSoftened, setAssistantDockSoftened] = useState(false);
   const [checkpointPanel, setCheckpointPanel] = useState({ retentionCount: 20, currentReport: '', reports: [] });
   const [automationDraft, setAutomationDraft] = useState(defaultAutomationDraft);
   const [authorPersonaDraft, setAuthorPersonaDraft] = useState('');
+  const [blueprintDraft, setBlueprintDraft] = useState('');
   const [chapterJumpValue, setChapterJumpValue] = useState('');
   const [chapterCardFilter, setChapterCardFilter] = useState({ start: '', end: '' });
 
@@ -863,6 +918,7 @@ export default function App() {
   const localProjectVersionRef = useRef(0);
   const stopAiWritingRef = useRef(false);
   const currentAiAbortRef = useRef(null);
+  const assistantDockRef = useRef(null);
   const api = useApiClient(token);
 
   useEffect(() => {
@@ -955,6 +1011,35 @@ export default function App() {
     { label: `正文 ${currentWrittenChapterCount}`, done: currentWrittenChapterCount > 0 },
     { label: `检查点 ${selectedProject?.automation?.lastCheckpointAt || 0}`, done: Boolean(selectedProject?.automation?.lastCheckpointAt) },
   ];
+
+  useEffect(() => {
+    if (!selectedProject || activeTab === 'overview') {
+      setAssistantDockSoftened(false);
+      return undefined;
+    }
+
+    let frameId = 0;
+    const padding = 10;
+    const handlePointerMove = (event) => {
+      if (frameId) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        const rect = assistantDockRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const inside = event.clientX >= rect.left - padding
+          && event.clientX <= rect.right + padding
+          && event.clientY >= rect.top - padding
+          && event.clientY <= rect.bottom + padding;
+        setAssistantDockSoftened(inside);
+      });
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      if (frameId) cancelAnimationFrame(frameId);
+    };
+  }, [selectedProject, activeTab]);
+
   const filteredChapterCards = useMemo(() => {
     const cards = selectedProject?.automation?.chapterCards || [];
     const start = Number(chapterCardFilter.start) || 1;
@@ -1193,6 +1278,10 @@ export default function App() {
   }, [selectedProject, selectedChapterId]);
 
   useEffect(() => {
+    setBlueprintDraft(selectedProject?.automation?.masterPlan || '');
+  }, [selectedProjectId, selectedProject?.automation?.masterPlan]);
+
+  useEffect(() => {
     setSelectedChapterIds([]);
     setSelectedCharacterIds([]);
     setSelectedChapterCardIds([]);
@@ -1263,6 +1352,10 @@ export default function App() {
         ? `轻量生成模式已${value ? '开启' : '关闭'}`
         : selectedProject.automation?.progressNotes,
     });
+  }
+
+  function getLedgerCount(key) {
+    return selectedProject?.automation?.[key]?.length || 0;
   }
 
   async function deleteChapterCard(cardId) {
@@ -1943,15 +2036,59 @@ export default function App() {
     }
   }
 
+  async function saveBlueprintDraft() {
+    if (!selectedProject) return;
+    const nextProject = {
+      ...selectedProject,
+      automation: {
+        ...selectedProject.automation,
+        masterPlan: blueprintDraft,
+        progressNotes: '用户已手动更新长篇蓝图，后续分卷、章节卡和自动写作会按新版蓝图执行',
+      },
+    };
+    try {
+      setLoading(true);
+      const saved = await api(`/api/projects/${selectedProject.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(nextProject),
+      });
+      setProjects((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      setAiOutput(saved.automation?.masterPlan || '');
+      setStatus('已保存手动修改后的长篇蓝图');
+    } catch (error) {
+      setStatus(error.message || '保存蓝图失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function rebuildAutomationLedgers() {
+    if (!selectedProject) return;
+    try {
+      setLoading(true);
+      const data = await api(`/api/projects/${selectedProject.id}/automation/rebuild-ledgers`, {
+        method: 'POST',
+      });
+      setProjects((current) => current.map((item) => (item.id === data.project.id ? data.project : item)));
+      setStatus(`已重建台账：角色记忆 ${data.project.automation?.characterStateMemory?.length || 0} 条`);
+    } catch (error) {
+      setStatus(error.message || '重建自动写作台账失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function generateLongFormBatch() {
     if (!selectedProject) return;
     const total = Math.max(1, Number(automationDraft.batchCount) || 3);
     const startChapter = currentWrittenChapterCount + 1;
     let generatedCount = 0;
+    let pauseMessage = '';
     try {
       setLoading(true);
       stopAiWritingRef.current = false;
       setAiOutput('');
+      setStreamPreview({ active: true, phase: '准备逐章流式自动写作', text: '' });
       setWritingProgress({ label: '继续自动写作', current: 0, total, chapter: startChapter, note: withAiLabel(`准备写第 ${startChapter} 章`, aiConfig, 'writing') });
 
       for (let index = 0; index < total; index += 1) {
@@ -1960,34 +2097,54 @@ export default function App() {
         setWritingProgress({ label: '继续自动写作', current: index, total, chapter: chapterNumber, note: withAiLabel(`正在写第 ${chapterNumber} 章`, aiConfig, 'writing') });
         setStatus(withAiLabel(`正在写第 ${chapterNumber} 章（${index + 1}/${total}）`, aiConfig, 'writing'));
 
-        const data = await apiWithAiAbort(`/api/projects/${selectedProject.id}/automation/generate-batch`, {
-          method: 'POST',
+        let data = null;
+        setStreamPreview({ active: true, phase: `正在连接第 ${chapterNumber} 章流式生成`, text: '' });
+        await apiStreamWithAiAbort(`/api/projects/${selectedProject.id}/automation/generate-next/stream`, {
           body: JSON.stringify({
             ...aiConfig,
-            batchCount: 1,
+            targetChapter: chapterNumber,
+            targetProgress: startChapter + total - 1,
             lightweight: Boolean(selectedProject.automation?.lightweightGeneration),
           }),
+          onEvent: (event) => {
+            if (event.type === 'phase') {
+              setStreamPreview((current) => ({ ...current, active: true, phase: event.text || '' }));
+              setWritingProgress((current) => current ? { ...current, note: event.text || current.note } : current);
+            }
+            if (event.type === 'token') {
+              setStreamPreview((current) => ({ ...current, active: true, text: `${current.text}${event.text || ''}` }));
+            }
+            if (event.type === 'saved') data = event;
+            if (event.type === 'error') throw new Error(event.message || '自动写作流式生成失败');
+          },
         });
+        if (!data?.project) throw new Error('自动写作流式生成未返回保存结果');
 
         generatedCount += data.chapters?.length || 0;
-        setAiOutput((current) => [current, data.text].filter(Boolean).join('\n\n'));
+        setAiOutput((current) => [current, data.output || data.text].filter(Boolean).join('\n\n'));
         setProjects((current) => current.map((item) => (item.id === data.project.id ? data.project : item)));
         setSelectedChapterId(data.project.chapters.at(-1)?.id || selectedChapterId);
         setWritingProgress({ label: '继续自动写作', current: index + 1, total, chapter: chapterNumber, note: `已完成第 ${chapterNumber} 章` });
 
         if (data.pausedForReview || data.project.automation?.waitingForReview || data.project.automation?.status === 'review') {
-          setStatus(data.project.automation?.progressNotes || `第 ${chapterNumber} 章需要确认，已暂停自动写作`);
+          pauseMessage = data.project.automation?.progressNotes || `第 ${chapterNumber} 章需要确认，已暂停自动写作`;
+          setStatus(pauseMessage);
           break;
         }
         if (!data.chapters?.length) break;
       }
 
-      setStatus(stopAiWritingRef.current ? `已中断自动写作，本轮完成 ${generatedCount} 章` : `已自动生成 ${generatedCount} 章，继续向最低150万字推进`);
+      setStatus(stopAiWritingRef.current
+        ? `已中断自动写作，本轮完成 ${generatedCount} 章`
+        : pauseMessage
+          ? pauseMessage
+          : `已逐章流式生成 ${generatedCount} 章`);
     } catch (error) {
       setStatus(isAbortError(error) ? `已中断自动写作，本轮完成 ${generatedCount} 章` : error.message || '批量生成失败');
     } finally {
       setWritingProgress((current) => current ? { ...current, current: generatedCount, note: stopAiWritingRef.current ? `已中断，本轮完成 ${generatedCount} 章` : generatedCount ? `本轮完成 ${generatedCount} 章` : '本轮未完成章节' } : null);
       currentAiAbortRef.current = null;
+      setStreamPreview({ active: false, phase: '', text: '' });
       setLoading(false);
     }
   }
@@ -2103,11 +2260,13 @@ export default function App() {
     const total = Math.max(0, target - startCount);
     let completed = 0;
     let reachedCheckpoint = false;
+    let pauseMessage = '';
     try {
       setLoading(true);
       stopAiWritingRef.current = false;
       if (total <= 0) throw new Error('目标进度必须大于当前章节数');
       setAiOutput('');
+      setStreamPreview({ active: true, phase: '准备逐章流式推进', text: '' });
       setWritingProgress({ label: '写到指定进度', current: 0, total, chapter: startCount + 1, note: withAiLabel(`准备写到第 ${target} 章`, aiConfig, 'writing') });
 
       for (let chapterNumber = startCount + 1; chapterNumber <= target; chapterNumber += 1) {
@@ -2115,35 +2274,52 @@ export default function App() {
         setWritingProgress({ label: '写到指定进度', current: completed, total, chapter: chapterNumber, note: withAiLabel(`正在写第 ${chapterNumber} 章`, aiConfig, 'writing') });
         setStatus(withAiLabel(`正在写第 ${chapterNumber} 章，目标第 ${target} 章（${completed + 1}/${total}）`, aiConfig, 'writing'));
 
-        const data = await apiWithAiAbort(`/api/projects/${selectedProject.id}/automation/write-to-progress`, {
-          method: 'POST',
+        let data = null;
+        setStreamPreview({ active: true, phase: `正在连接第 ${chapterNumber} 章流式生成`, text: '' });
+        await apiStreamWithAiAbort(`/api/projects/${selectedProject.id}/automation/generate-next/stream`, {
           body: JSON.stringify({
             ...aiConfig,
             targetChapter: chapterNumber,
+            targetProgress: target,
+            stopAtCheckpoint: true,
             lightweight: Boolean(selectedProject.automation?.lightweightGeneration),
           }),
+          onEvent: (event) => {
+            if (event.type === 'phase') {
+              setStreamPreview((current) => ({ ...current, active: true, phase: event.text || '' }));
+              setWritingProgress((current) => current ? { ...current, note: event.text || current.note } : current);
+            }
+            if (event.type === 'token') {
+              setStreamPreview((current) => ({ ...current, active: true, text: `${current.text}${event.text || ''}` }));
+            }
+            if (event.type === 'saved') data = event;
+            if (event.type === 'error') throw new Error(event.message || '自动推进流式生成失败');
+          },
         });
+        if (!data?.project) throw new Error('自动推进流式生成未返回保存结果');
 
         completed += data.chapters?.length || 0;
         reachedCheckpoint = Boolean(data.reachedCheckpoint);
-        setAiOutput((current) => [current, data.text].filter(Boolean).join('\n\n'));
+        setAiOutput((current) => [current, data.output || data.text].filter(Boolean).join('\n\n'));
         setProjects((current) => current.map((item) => (item.id === data.project.id ? data.project : item)));
         setSelectedChapterId(data.project.chapters.at(-1)?.id || selectedChapterId);
         setWritingProgress({ label: '写到指定进度', current: completed, total, chapter: chapterNumber, note: `已完成第 ${chapterNumber} 章` });
 
         if (data.pausedForReview || data.project.automation?.waitingForReview || data.project.automation?.status === 'review') {
-          setStatus(data.project.automation?.progressNotes || `第 ${chapterNumber} 章需要确认，已暂停自动推进`);
+          pauseMessage = data.project.automation?.progressNotes || `第 ${chapterNumber} 章需要确认，已暂停自动推进`;
+          setStatus(pauseMessage);
           break;
         }
         if (reachedCheckpoint || !data.chapters?.length) break;
       }
 
-      setStatus(stopAiWritingRef.current ? `已中断自动推进，本轮完成 ${completed} 章` : reachedCheckpoint ? '已到20章检查点，请先确认' : '已自动推进到新的写作进度');
+      setStatus(stopAiWritingRef.current ? `已中断自动推进，本轮完成 ${completed} 章` : pauseMessage || (reachedCheckpoint ? '已到20章检查点，请先确认' : '已自动推进到新的写作进度'));
     } catch (error) {
       setStatus(isAbortError(error) ? `已中断自动推进，本轮完成 ${completed} 章` : error.message || '自动推进失败');
     } finally {
       setWritingProgress((current) => current ? { ...current, current: completed, note: stopAiWritingRef.current ? `已中断，本轮完成 ${completed} 章` : completed ? `本轮完成 ${completed} 章` : '本轮未完成章节' } : null);
       currentAiAbortRef.current = null;
+      setStreamPreview({ active: false, phase: '', text: '' });
       setLoading(false);
     }
   }
@@ -2567,8 +2743,20 @@ export default function App() {
                   <textarea value={selectedProject.notes} onChange={(event) => updateSelectedProject('notes', event.target.value)} placeholder="灵感与伏笔" />
                 </div>
                 <div className="panel blueprint-panel">
-                  <div className="section-header"><h2>长篇蓝图</h2><button type="button" className="secondary small" onClick={viewMasterPlan}>在 AI 输出中查看</button></div>
-                  {selectedProject.automation?.masterPlan ? <pre className="blueprint-preview">{selectedProject.automation.masterPlan}</pre> : <p className="muted">还没有蓝图。进入“AI 创作与长篇引擎”后点击“生成长篇蓝图”。</p>}
+                  <div className="section-header">
+                    <h2>长篇蓝图</h2>
+                    <div className="row wrap">
+                      <button type="button" className="secondary small" onClick={viewMasterPlan}>在 AI 输出中查看</button>
+                      <button type="button" className="small" onClick={saveBlueprintDraft} disabled={loading}>保存蓝图修改</button>
+                    </div>
+                  </div>
+                  <textarea
+                    className="blueprint-editor"
+                    placeholder="还没有蓝图。进入“AI 创作与长篇引擎”后点击“生成长篇蓝图”，或在这里手动写入/粘贴蓝图。"
+                    value={blueprintDraft}
+                    onChange={(event) => setBlueprintDraft(event.target.value)}
+                  />
+                  <p className="muted">保存后会保留你手动修改的蓝图，后续分卷、章节卡、自动写作和检查点都会读取这里的版本。</p>
                 </div>
                 <div className="panel blueprint-panel">
                   <div className="section-header">
@@ -3064,15 +3252,38 @@ export default function App() {
                     />
                     <small>推荐当前项目：主平台刺猬猫、节奏番茄、结构起点。</small>
                   </div>
-                  <div className="hero-actions row">
-                    <button type="button" className="secondary" onClick={generateCurrentChapter} disabled={loading}>生成第一章/当前章</button>
-                    <button type="button" onClick={generateLongFormPlan} disabled={loading}>{loading ? '处理中...' : '生成长篇蓝图'}</button>
-                    <button type="button" className="secondary" onClick={viewMasterPlan}>查看蓝图</button>
-                    <button type="button" className="secondary" onClick={autoSplitVolumes} disabled={loading}>自动分卷</button>
-                    <button type="button" className="secondary" onClick={generateChapterCards} disabled={loading}>自动排章节卡</button>
-                    <button type="button" className="secondary" onClick={generateLongFormBatch} disabled={loading}>继续自动写作</button>
-                    <button type="button" className="secondary" onClick={writeToTargetProgress} disabled={loading}>写到指定进度</button>
-                    <button type="button" className="secondary" onClick={resetAutomationRuntime} disabled={loading}>清空自动写作台账</button>
+                  <div className="automation-command-deck">
+                    <article className="command-card command-primary">
+                      <span>Start</span>
+                      <strong>启动写作</strong>
+                      <button type="button" onClick={generateCurrentChapter} disabled={loading}>生成第一章/当前章</button>
+                    </article>
+                    <article className="command-card">
+                      <span>Plan</span>
+                      <strong>规划阶段</strong>
+                      <div className="command-buttons">
+                        <button type="button" onClick={generateLongFormPlan} disabled={loading}>{loading ? '处理中...' : '生成长篇蓝图'}</button>
+                        <button type="button" className="secondary" onClick={viewMasterPlan}>查看蓝图</button>
+                        <button type="button" className="secondary" onClick={autoSplitVolumes} disabled={loading}>自动分卷</button>
+                        <button type="button" className="secondary" onClick={generateChapterCards} disabled={loading}>自动排章节卡</button>
+                      </div>
+                    </article>
+                    <article className="command-card command-glow">
+                      <span>Quest</span>
+                      <strong>推进连载</strong>
+                      <div className="command-buttons two">
+                        <button type="button" onClick={generateLongFormBatch} disabled={loading}>继续自动写作</button>
+                        <button type="button" onClick={writeToTargetProgress} disabled={loading}>写到指定进度</button>
+                      </div>
+                    </article>
+                    <article className="command-card command-muted">
+                      <span>Maintain</span>
+                      <strong>维护</strong>
+                      <div className="command-buttons two">
+                        <button type="button" className="secondary" onClick={rebuildAutomationLedgers} disabled={loading}>重建自动写作台账</button>
+                        <button type="button" className="secondary" onClick={resetAutomationRuntime} disabled={loading}>清空自动写作台账</button>
+                      </div>
+                    </article>
                   </div>
                   {writingProgress && loading ? (
                     <button type="button" className="danger" onClick={cancelAiWriting}>中断 AI 写作</button>
@@ -3110,8 +3321,28 @@ export default function App() {
                     <p>章节卡：{selectedProject.automation?.chapterCards?.length || 0}</p>
                     <p>检查点：第 {selectedProject.automation?.lastCheckpointAt || 0} 章</p>
                     <p>平台策略：{getPlatformStrategy(selectedProject).primary} / {getPlatformStrategy(selectedProject).pace} / {getPlatformStrategy(selectedProject).structure}</p>
-                    <p>伏笔台账：{selectedProject.automation?.foreshadowingLedger?.length || 0} 条；期待：{selectedProject.automation?.readerExpectations?.length || 0} 条；爽点：{selectedProject.automation?.commercialBeatLedger?.length || 0} 条</p>
-                    <p>角色记忆：{selectedProject.automation?.characterStateMemory?.length || 0} 条；系统规则：{selectedProject.automation?.powerSystemLedger?.length || 0} 条；功能日历：{selectedProject.automation?.chapterFunctionCalendar?.length || 0} 条</p>
+                    <div className="ledger-meter-grid">
+                      {[
+                        ['foreshadowingLedger', '伏笔台账'],
+                        ['readerExpectations', '读者期待'],
+                        ['commercialBeatLedger', '爽点台账'],
+                        ['characterStateMemory', '角色记忆'],
+                        ['characterLongTermSummary', '角色摘要'],
+                        ['powerSystemLedger', '系统规则'],
+                        ['chapterFunctionCalendar', '功能日历'],
+                      ].map(([key, label]) => {
+                        const count = getLedgerCount(key);
+                        const limit = automationLedgerLimits[key];
+                        const percent = Math.min(100, Math.round((count / Math.max(limit, 1)) * 100));
+                        return (
+                          <div key={key} className={percent >= 90 ? 'ledger-meter is-full' : 'ledger-meter'}>
+                            <span>{label}</span>
+                            <strong>{count} / {limit}</strong>
+                            <div className="ledger-track"><i style={{ width: `${percent}%` }} /></div>
+                          </div>
+                        );
+                      })}
+                    </div>
                     <p>{selectedProject.automation?.progressNotes || '尚未开始自动长篇流程'}</p>
                   </div>
                   <textarea className="ai-output" value={aiOutput} onChange={(event) => setAiOutput(event.target.value)} placeholder="AI 输出、长篇蓝图或批量章节会显示在这里" />
@@ -3174,6 +3405,23 @@ export default function App() {
           <section className="panel empty-state"><h2>先创建一部作品</h2><p>左侧填写作品信息后即可开始创作。</p></section>
         )}
       </main>
+      {selectedProject && activeTab !== 'overview' ? (
+        <aside ref={assistantDockRef} className={[assistantIsProcessing ? 'live2d-dock is-processing' : 'live2d-dock', assistantDockSoftened ? 'is-softened' : ''].filter(Boolean).join(' ')}>
+          <div className="live2d-dock-bubble">
+            <span className={assistantIsProcessing ? 'status-dot active' : 'status-dot'} />
+            <strong>{assistantIsProcessing ? '正在陪你跑生成' : '看板娘待命中'}</strong>
+            <small>{writingProgress?.note || status || selectedProject.automation?.progressNotes || '需要我时就点一下姿态。'}</small>
+          </div>
+          <Live2DAssistant state={activeAssistantState} />
+          <div className="live2d-dock-actions">
+            {Object.keys(assistantStateLabels).slice(0, 5).map((pose) => (
+              <button key={pose} type="button" className={assistantPose === pose ? 'chip active small' : 'chip small'} onClick={() => setAssistantPose(pose)} disabled={assistantIsProcessing}>
+                {assistantStateLabels[pose]}
+              </button>
+            ))}
+          </div>
+        </aside>
+      ) : null}
       {showShortcuts ? (
         <div className="shortcut-overlay" onClick={() => setShowShortcuts(false)}>
           <section className="panel shortcut-modal" onClick={(event) => event.stopPropagation()}>

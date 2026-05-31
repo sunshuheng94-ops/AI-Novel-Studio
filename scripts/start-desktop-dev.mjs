@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.join(__dirname, '..');
-const sharedDataDir = process.env.APP_DATA_DIR || 'C:\\Users\\孙树珩\\AppData\\Roaming\\ai-novel-studio\\data';
+const installedDataDir = 'D:\\小说\\AI小说工作台-data';
+const legacyDataDir = 'C:\\Users\\孙树珩\\AppData\\Roaming\\ai-novel-studio\\data';
+const sharedDataDir = process.env.APP_DATA_DIR || (fs.existsSync(installedDataDir) ? installedDataDir : legacyDataDir);
 const vitePort = process.env.VITE_PORT || '5173';
 const backendPort = process.env.PORT || '3001';
 

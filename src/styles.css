@@ -83,6 +83,12 @@ button {
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
 
+button:focus-visible,
+.chip:focus-visible {
+  outline: 2px solid rgba(255, 224, 154, 0.8);
+  outline-offset: 3px;
+}
+
 button:hover:not(:disabled) {
   transform: translateY(-2px);
   filter: saturate(1.08);
@@ -93,6 +99,10 @@ button.secondary {
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.18);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+button.secondary:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(255, 107, 200, 0.16), rgba(85, 215, 255, 0.12));
 }
 
 button.danger {
@@ -1072,6 +1082,84 @@ kbd {
   margin-top: 12px;
 }
 
+.live2d-dock {
+  position: fixed;
+  right: 22px;
+  bottom: 58px;
+  z-index: 18;
+  width: min(300px, calc(100vw - 40px));
+  padding: 12px;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    radial-gradient(circle at 50% 82%, rgba(85, 215, 255, 0.22), transparent 42%),
+    linear-gradient(180deg, rgba(22, 13, 48, 0.78), rgba(8, 5, 19, 0.74));
+  backdrop-filter: blur(18px) saturate(1.12);
+  box-shadow: 0 24px 74px rgba(0, 0, 0, 0.42), 0 0 38px rgba(255, 107, 200, 0.12);
+  transition: opacity 0.18s ease, filter 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+
+.live2d-dock.is-softened {
+  opacity: 0.18;
+  filter: blur(3px) saturate(0.75);
+  transform: translateY(4px) scale(0.98);
+}
+
+.live2d-dock.is-processing {
+  border-color: rgba(255, 107, 200, 0.5);
+  box-shadow: 0 24px 74px rgba(0, 0, 0, 0.42), 0 0 42px rgba(255, 107, 200, 0.24), 0 0 26px rgba(85, 215, 255, 0.12);
+}
+
+.live2d-dock .live2d-stage {
+  width: 100%;
+  height: 310px;
+  margin: 40px auto 0;
+  border-radius: 24px;
+  animation: assistantFloat 4.2s ease-in-out infinite;
+}
+
+.live2d-dock-bubble {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(8, 5, 19, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.live2d-dock-bubble small {
+  grid-column: 2;
+  max-height: 38px;
+  overflow: hidden;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.live2d-dock-actions {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.live2d-dock-actions .chip.small {
+  padding: 0.44rem 0.62rem;
+  font-size: 0.78rem;
+  pointer-events: auto;
+}
+
 .assistant-status-icon {
   width: 56px;
   height: 56px;
@@ -1361,6 +1449,7 @@ kbd {
 .automation-panel > textarea,
 .automation-panel > .mode-card,
 .automation-panel > .hero-actions,
+.automation-panel > .automation-command-deck,
 .automation-panel > .writing-progress,
 .automation-panel > .risk-box,
 .automation-panel > .ai-output {
@@ -1369,6 +1458,90 @@ kbd {
 
 .automation-panel > .field-label {
   min-width: 0;
+}
+
+.automation-command-deck {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.72fr) minmax(250px, 1fr) minmax(250px, 1fr) minmax(190px, 0.72fr);
+  gap: 14px;
+  min-width: 0;
+}
+
+.command-card {
+  position: relative;
+  min-height: 172px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.035)),
+    radial-gradient(circle at 10% 10%, rgba(255, 107, 200, 0.16), transparent 34%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 18px 46px rgba(3, 2, 12, 0.22);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.command-card::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  pointer-events: none;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.command-card > span {
+  width: fit-content;
+  padding: 0.28rem 0.64rem;
+  border-radius: 999px;
+  color: #07111c;
+  background: linear-gradient(135deg, var(--yellow), var(--pink));
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.command-card strong {
+  font-size: 1.18rem;
+}
+
+.command-card button {
+  width: 100%;
+  justify-content: center;
+  min-width: 0;
+  white-space: normal;
+}
+
+.command-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.command-buttons.two {
+  grid-template-columns: 1fr;
+}
+
+.command-primary {
+  border-color: rgba(255, 107, 200, 0.42);
+  background:
+    radial-gradient(circle at 15% 15%, rgba(255, 107, 200, 0.32), transparent 42%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(70, 22, 72, 0.32));
+}
+
+.command-glow {
+  border-color: rgba(85, 215, 255, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 34px rgba(85, 215, 255, 0.12), 0 20px 52px rgba(3, 2, 12, 0.24);
+}
+
+.command-muted {
+  opacity: 0.92;
 }
 
 .mode-card {
@@ -1574,6 +1747,15 @@ kbd {
   line-height: 1.72;
 }
 
+.blueprint-editor {
+  min-height: 520px;
+  font-family: "HarmonyOS Sans SC", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  line-height: 1.72;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(8, 5, 19, 0.42)),
+    rgba(19, 12, 38, 0.76);
+}
+
 .mini-card,
 .timeline-item,
 .relation-card,
@@ -1612,6 +1794,53 @@ kbd {
   background: rgba(0, 0, 0, 0.2);
   color: var(--text);
   font-family: inherit;
+}
+
+.ledger-meter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.ledger-meter {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(circle at 12% 12%, rgba(85, 215, 255, 0.14), transparent 34%),
+    rgba(255, 255, 255, 0.06);
+}
+
+.ledger-meter span {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.ledger-meter strong {
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  color: #fff;
+}
+
+.ledger-meter.is-full {
+  border-color: rgba(255, 224, 154, 0.44);
+  box-shadow: 0 0 22px rgba(255, 224, 154, 0.08);
+}
+
+.ledger-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ledger-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--mint), var(--blue), var(--pink));
 }
 
 .writing-progress-top {
@@ -1731,6 +1960,7 @@ kbd {
   .card-grid,
   .dashboard-grid,
   .dashboard-layout,
+  .automation-command-deck,
   .overview-hero,
   .overview-grid,
   .ai-layout,
@@ -1752,6 +1982,24 @@ kbd {
     width: min(320px, 92%);
     height: 360px;
     margin-top: 72px;
+  }
+
+  .live2d-dock {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    margin: 18px 0 0;
+  }
+
+  .live2d-dock .live2d-stage {
+    height: 320px;
+    margin-top: 46px;
+  }
+
+  .command-buttons,
+  .command-buttons.two {
+    grid-template-columns: 1fr;
   }
 
   .assistant-showcase-card {
