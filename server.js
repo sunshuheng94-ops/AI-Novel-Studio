@@ -151,8 +151,14 @@ const automationLedgerLimits = {
   readerExpectations: 160,
   commercialBeatLedger: 160,
   characterStateMemory: 300,
+  characterLongTermSummary: 80,
   powerSystemLedger: 200,
   chapterFunctionCalendar: 240,
+};
+
+const checkpointIntervals = {
+  standard: 20,
+  major: 100,
 };
 
 function normalizeAutomationLedger(key, value) {
@@ -2229,21 +2235,121 @@ function getLatestCheckpointReport(automation = {}) {
   return reports.at(-1)?.report || automation.checkpointReport || '';
 }
 
+function getCheckpointKind(chapterCount = 0) {
+  const count = Number(chapterCount) || 0;
+  if (count > 0 && count % checkpointIntervals.major === 0) return 'major';
+  return 'standard';
+}
+
+function getCheckpointInterval(kind = 'standard') {
+  return kind === 'major' ? checkpointIntervals.major : checkpointIntervals.standard;
+}
+
+function getCheckpointLabel(kind = 'standard') {
+  return kind === 'major' ? '100章大阶段检查' : '20章一致性检查';
+}
+
+function getNextCheckpointInfo(chapterCount = 0) {
+  const count = Number(chapterCount) || 0;
+  const interval = count > 0 && (count + 1) % checkpointIntervals.major === 0
+    ? checkpointIntervals.major
+    : checkpointIntervals.standard;
+  const remaining = count % interval === 0 ? interval : interval - (count % interval);
+  return { interval, remaining };
+}
+
 function trimCheckpointReports(automation = {}, retentionCount = 20) {
   const count = Math.max(1, Number(retentionCount) || 20);
   const reports = Array.isArray(automation.checkpointReports) ? automation.checkpointReports : [];
   return reports.slice(-count);
 }
 
-function storeCheckpointReport(automation = {}, report = '') {
+function storeCheckpointReport(automation = {}, report = '', { kind = 'standard', chapterCount = 0 } = {}) {
   const retentionCount = Math.max(1, Number(automation.checkpointRetentionCount) || 20);
-  const nextReports = trimCheckpointReports({ ...automation, checkpointReports: [...(automation.checkpointReports || []), { report: normalizeText(report), createdAt: now() }] }, retentionCount);
+  const nextReports = trimCheckpointReports({ ...automation, checkpointReports: [...(automation.checkpointReports || []), { report: normalizeText(report), kind, chapterCount, createdAt: now() }] }, retentionCount);
   return {
     ...automation,
     checkpointReport: normalizeText(report),
     checkpointReports: nextReports,
     checkpointRetentionCount: retentionCount,
   };
+}
+
+async function generateCheckpointReportForProject({ db, projectIndex, project, apiKey, model, baseUrl, requestedKind = '' }) {
+  const automation = project.automation || {};
+  const writtenChapters = project.chapters.filter((chapter, chapterIndex) => !isBlankStarterChapter(chapter, chapterIndex));
+  const currentCount = writtenChapters.length;
+  const checkpointKind = normalizeText(requestedKind) === 'major' ? 'major' : getCheckpointKind(currentCount);
+  const checkpointInterval = getCheckpointInterval(checkpointKind);
+  const checkpointLabel = getCheckpointLabel(checkpointKind);
+  const recentCards = (automation.chapterCards || []).slice(Math.max(0, currentCount - checkpointInterval), currentCount);
+  const recentChapters = writtenChapters.slice(-checkpointInterval);
+  const recentFullText = buildChapterRangeContext(writtenChapters, Math.max(1, currentCount - (checkpointKind === 'major' ? 10 : 5)), currentCount);
+  const generationMode = automation.lightweightGeneration ? '轻量生成模式' : '单章质量模式';
+  const majorReviewGuide = checkpointKind === 'major' ? [
+    '这是100章大阶段检查，重点不是逐章挑错，而是判断长篇结构是否仍然健康。',
+    '额外检查：主线是否偏离蓝图；当前卷是否拖沓或提前完成；角色成长是否停滞；伏笔是否长期拖欠；爽点/危机/转折密度是否下降；后续章节卡是否需要重排；分卷边界是否需要调整；蓝图是否需要写入阶段修正。',
+    '报告最后必须输出【阶段建议】，并明确说明下面四个按钮是否需要点击：继续写、重排后续章节卡、重新自动分卷、保存检查建议到蓝图。不要只说“视情况”。',
+  ].join('\n') : '报告最后必须输出【阶段建议】，说明是否可以直接继续写，是否需要先修订章节或重排章节卡。';
+
+  const prompt = [
+    `请生成${checkpointLabel}报告。这个报告服务后续自动写作，不是文学评论。`,
+    `当前正文生成形态：${generationMode}；软件采用逐章生成、逐章保存，章节卡是剧情轨道，作者人设和最近正文是写法/口吻锚点。`,
+    majorReviewGuide,
+    automation.lightweightGeneration
+      ? '轻量模式检查重点：不要因为缺少场景包/叙事拍就要求补流程；重点判断正文是否读起来像真人网文、是否承接章节卡、是否有开局危机/动作选择/章末钩子/系统规则边界。'
+      : '单章质量模式检查重点：允许有结构规划痕迹，但必须避免正文变成执行清单、分镜提纲或设定说明书。',
+    '输出必须按以下标题组织：',
+    checkpointKind === 'major'
+      ? '1. 总体结论：继续 / 保存检查建议到蓝图 / 重排后续章节卡 / 重新自动分卷（选择最优先的一项，并给一句原因）。'
+      : '1. 总体结论：继续 / 暂停修订 / 需要重排章节卡（三选一，并给一句原因）。',
+    `2. 蓝图与章节卡执行：最近${checkpointInterval}章是否按蓝图阶段推进，哪些章节偏离或提前兑现。`,
+    '3. 番茄读感：开局钩子、爽点兑现、危机密度、章末钩子、阅读顺滑度，指出最影响追读的3个问题。',
+    '4. 真人写作感：是否有AI味、模板化排比、分镜提纲感、功能性喊话过多、系统提示半框格式；只列具体章节和可执行修法。',
+    '5. 角色与口吻：主角吐槽、判断、害怕、行动是否稳定；重要配角是否口吻漂移。',
+    '6. 搜打撤/系统规则：搜、打、撤是否形成选择与代价；系统提示是否独立成行并整行用【】包住；规则是否前后矛盾。',
+    '7. 伏笔与读者期待台账：列出新增、推进、回收、拖欠，标明下一阶段优先回应项。',
+    checkpointKind === 'major'
+      ? '8. 长篇结构复盘：判断卷结构、主线阶段、角色成长、商业爽点密度、后续章节卡和分卷边界是否需要调整。'
+      : '8. 下一阶段写作指令：给后续5章的具体提醒，必须能直接喂给自动写作，不要泛泛建议。',
+    checkpointKind === 'major'
+      ? '9. 下一阶段写作指令：给后续10章的具体提醒，必须能直接喂给自动写作，不要泛泛建议。'
+      : '',
+    '最后单独输出【阶段建议】，逐项写明：1. 是否建议点击“继续写”；2. 是否建议点击“重排后续章节卡”；3. 是否建议点击“重新自动分卷”；4. 是否建议点击“保存检查建议到蓝图”。',
+    buildVoiceDriftGuard(project),
+    buildReaderExpectationGuide(),
+    buildPlatformStrategyGuide(project, automation),
+    buildAutomationMemoryGuide(project, automation),
+    '长篇蓝图：',
+    automation.masterPlan || '',
+    buildAuthorPersonaGuide(automation.authorPersona),
+    `最近${checkpointInterval}张章节卡（用于核对剧情轨道，不要按写法字段硬扣）：`,
+    recentCards.map((card, cardIndex) => formatChapterCard(card, Math.max(1, currentCount - recentCards.length + 1) + cardIndex)).join('\n\n'),
+    `最近${checkpointInterval}章摘要：`,
+    ...recentChapters.map((chapter) => `${chapter.title}\n${chapter.summary}`),
+    checkpointKind === 'major' ? '最近10章正文抽样（用于检查真人读感、系统格式、动作/对话自然度）：' : '最近5章正文抽样（用于检查真人读感、系统格式、动作/对话自然度）：',
+    recentFullText,
+    '角色资料：',
+    project.characters.map((character) => `${character.name}/${character.role}/${character.goal}/${character.secret}`).join('\n'),
+    '时间线：',
+    project.timeline.map((item) => `${item.order}.${item.title} - ${item.impact}`).join('\n'),
+  ].join('\n');
+
+  const text = await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.7, userPrompt: prompt });
+  const nextProject = buildProjectPayload({
+    ...project,
+    automation: {
+      ...automation,
+      ...storeCheckpointReport(automation, text, { kind: checkpointKind, chapterCount: currentCount }),
+      waitingForReview: true,
+      lastCheckpointAt: currentCount,
+      progressNotes: `已完成第 ${currentCount} 章${checkpointLabel}，等待用户确认`,
+      status: 'checkpoint',
+    },
+  });
+  db.projects[projectIndex] = nextProject;
+  await writeDb(db);
+  return { text, project: nextProject, kind: checkpointKind, label: checkpointLabel };
 }
 
 function serializeGeneratedChapters(chapters = [], startChapter = 1) {
@@ -5960,7 +6066,7 @@ async function generateAutomationChapter({ apiKey, model, baseUrl, project, auto
     buildParagraphBudgetGuide({ project, automation, card, chapterNumber }),
     '长篇蓝图：',
     automation.masterPlan,
-    getLatestCheckpointReport(automation) ? '最新20章检查点报告：' : '',
+    getLatestCheckpointReport(automation) ? '最新阶段检查报告：' : '',
     getLatestCheckpointReport(automation) || '',
     buildContinuityMemoryText(project, automation),
     buildAutomationMemoryGuide(project, automation),
@@ -6335,7 +6441,9 @@ async function generateAndPersistQualityChapters({ req, projectIndex, project, a
       const batchWords = generatedChapters.reduce((sum, chapter) => sum + countWords(chapter.content), 0);
       const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: generatedChapters, cards: plannedCards.slice(0, generatedChapters.length), startChapter, previousAutomation: automation, projectCharacters: project.characters || [] });
       const nextCount = initialState.writtenCount + generatedChapters.length;
-      const reachCheckpoint = stopAtCheckpoint && nextCount > 0 && nextCount % 20 === 0;
+      const reachCheckpoint = stopAtCheckpoint && nextCount > 0 && nextCount % checkpointIntervals.standard === 0;
+      const checkpointKind = reachCheckpoint ? getCheckpointKind(nextCount) : '';
+      const checkpointLabel = reachCheckpoint ? getCheckpointLabel(checkpointKind) : '';
       const reachedTarget = targetProgress ? nextCount >= targetProgress : generatedChapters.length >= batchCount;
       const shouldPauseForReview = getAutomationReviewPause(warnings);
 
@@ -6353,7 +6461,7 @@ async function generateAndPersistQualityChapters({ req, projectIndex, project, a
           progressNotes: warnings.length
             ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，但有警告：${warnings.join('；')}`
             : reachCheckpoint
-              ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，触发 20 章检查点`
+              ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，触发 ${checkpointLabel}`
               : reachedTarget
                 ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，达到指定进度`
                 : `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，继续朝第 ${targetProgress || initialState.writtenCount + batchCount} 章推进`,
@@ -6363,6 +6471,21 @@ async function generateAndPersistQualityChapters({ req, projectIndex, project, a
       req.db.projects[projectIndex] = persistedProject;
       await writeDb(req.db);
       workingProject = persistedProject;
+
+      if (reachCheckpoint && !shouldPauseForReview) {
+        const planningConfig = resolveAiModelConfig(req.body, 'planning');
+        const checkpointReport = await generateCheckpointReportForProject({
+          db: req.db,
+          projectIndex,
+          project: persistedProject,
+          apiKey: planningConfig.apiKey || apiKey,
+          model: planningConfig.model || model,
+          baseUrl: planningConfig.baseUrl || baseUrl,
+          requestedKind: checkpointKind,
+        });
+        persistedProject = checkpointReport.project;
+        workingProject = checkpointReport.project;
+      }
 
       if (reachCheckpoint || shouldPauseForReview) break;
     } catch (error) {
@@ -7693,7 +7816,9 @@ app.post('/api/projects/:id/automation/generate-next/stream', auth, async (req, 
     const batchWords = countWords(generatedChapter.content || '');
     const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: generatedChapters, cards: [card], startChapter: chapterNumber, previousAutomation: automation, projectCharacters: project.characters || [] });
     const nextCount = writeState.writtenCount + 1;
-    const reachCheckpoint = stopAtCheckpoint && nextCount > 0 && nextCount % 20 === 0;
+    const reachCheckpoint = stopAtCheckpoint && nextCount > 0 && nextCount % checkpointIntervals.standard === 0;
+    const checkpointKind = reachCheckpoint ? getCheckpointKind(nextCount) : '';
+    const checkpointLabel = reachCheckpoint ? getCheckpointLabel(checkpointKind) : '';
     const reachedTarget = targetProgress ? nextCount >= Number(targetProgress) : true;
     const warnings = result.warnings || [];
     const shouldPauseForReview = getAutomationReviewPause(warnings);
@@ -7710,15 +7835,23 @@ app.post('/api/projects/:id/automation/generate-next/stream', auth, async (req, 
         status: shouldPauseForReview ? 'review' : reachCheckpoint ? 'checkpoint' : reachedTarget ? 'paused' : 'writing',
         progressNotes: warnings.length
           ? `已流式写到第 ${nextCount} 章，但有警告：${warnings.join('；')}`
-          : reachCheckpoint
-            ? `已流式写到第 ${nextCount} 章，触发 20 章检查点`
-            : `已流式写到第 ${nextCount} 章`,
+            : reachCheckpoint
+              ? `已流式写到第 ${nextCount} 章，触发 ${checkpointLabel}`
+              : `已流式写到第 ${nextCount} 章`,
       },
     });
     if (signal?.aborted) throw new Error('AI 请求已中断');
     req.db.projects[index] = nextProject;
     await writeDb(req.db);
-    send({ type: 'saved', text: `第${chapterNumber}章已保存`, chapter: generatedChapter, chapters: generatedChapters, project: nextProject, output: result.text || generatedChapter.content || '', warnings, reachedCheckpoint: reachCheckpoint, pausedForReview: shouldPauseForReview, replacedBlankStarter: writeState.replaceBlankStarter });
+    let savedProject = nextProject;
+    let checkpointReport = null;
+    if (reachCheckpoint && !shouldPauseForReview) {
+      send({ type: 'phase', text: `正在生成${checkpointLabel}报告`, chapterNumber });
+      const planningConfig = resolveAiModelConfig(req.body, 'planning');
+      checkpointReport = await generateCheckpointReportForProject({ db: req.db, projectIndex: index, project: nextProject, apiKey: planningConfig.apiKey || apiKey, model: planningConfig.model || model, baseUrl: planningConfig.baseUrl || baseUrl, requestedKind: checkpointKind });
+      savedProject = checkpointReport.project;
+    }
+    send({ type: 'saved', text: `第${chapterNumber}章已保存`, chapter: generatedChapter, chapters: generatedChapters, project: savedProject, output: result.text || generatedChapter.content || '', warnings, reachedCheckpoint: reachCheckpoint, checkpointKind, checkpointLabel, checkpointReport: checkpointReport?.text || '', pausedForReview: shouldPauseForReview, replacedBlankStarter: writeState.replaceBlankStarter });
     send({ type: 'done' });
     res.end();
   } catch (error) {
@@ -7852,7 +7985,7 @@ app.post('/api/projects/:id/automation/chapter-cards', auth, async (req, res) =>
     automation.masterPlan,
     buildAuthorPersonaGuide(automation.authorPersona),
     '真人写作模块将另行决定本批开头与叙事手法，章节卡不要输出这些字段。',
-    getLatestCheckpointReport(automation) ? '最新20章检查点报告：' : '',
+    getLatestCheckpointReport(automation) ? '最新阶段检查报告：' : '',
     getLatestCheckpointReport(automation) || '',
     '分卷信息：',
     project.volumes.map((volume) => `${volume.title}\n定位：${volume.positioning}\n目标：${volume.goal}\n钩子：${volume.endingHook}`).join('\n\n'),
@@ -7971,7 +8104,7 @@ app.post('/api/projects/:id/automation/chapter-cards/stream', auth, async (req, 
         '长篇蓝图：',
         automation.masterPlan,
         buildAuthorPersonaGuide(automation.authorPersona),
-        getLatestCheckpointReport(automation) ? '最新20章检查点报告：' : '',
+        getLatestCheckpointReport(automation) ? '最新阶段检查报告：' : '',
         getLatestCheckpointReport(automation) || '',
         '分卷信息：',
         project.volumes.map((volume) => `${volume.title}\n定位：${volume.positioning}\n目标：${volume.goal}\n钩子：${volume.endingHook}`).join('\n\n'),
@@ -8024,66 +8157,11 @@ app.post('/api/projects/:id/automation/checkpoint', auth, async (req, res) => {
 
   const { apiKey, model, baseUrl } = resolveAiModelConfig(req.body, 'planning');
   const project = req.db.projects[index];
-  const automation = project.automation || {};
   if (!apiKey) return res.status(400).json({ message: '缺少 DeepSeek API Key' });
 
-  const writtenChapters = project.chapters.filter((chapter, chapterIndex) => !isBlankStarterChapter(chapter, chapterIndex));
-  const currentCount = writtenChapters.length;
-  const recentCards = (automation.chapterCards || []).slice(Math.max(0, currentCount - 20), currentCount);
-  const recentChapters = writtenChapters.slice(-20);
-  const recentFullText = buildChapterRangeContext(writtenChapters, Math.max(1, currentCount - 5), currentCount);
-  const generationMode = automation.lightweightGeneration ? '轻量生成模式' : '单章质量模式';
-
-  const prompt = [
-    '请生成20章检查点报告。这个报告服务后续自动写作，不是文学评论。',
-    `当前正文生成形态：${generationMode}；软件采用逐章生成、逐章保存，章节卡是剧情轨道，作者人设和最近正文是写法/口吻锚点。`,
-    automation.lightweightGeneration
-      ? '轻量模式检查重点：不要因为缺少场景包/叙事拍就要求补流程；重点判断正文是否读起来像真人网文、是否承接章节卡、是否有开局危机/动作选择/章末钩子/系统规则边界。'
-      : '单章质量模式检查重点：允许有结构规划痕迹，但必须避免正文变成执行清单、分镜提纲或设定说明书。',
-    '输出必须按以下标题组织：',
-    '1. 总体结论：继续 / 暂停修订 / 需要重排章节卡（三选一，并给一句原因）。',
-    '2. 蓝图与章节卡执行：最近20章是否按蓝图阶段推进，哪些章节偏离或提前兑现。',
-    '3. 番茄读感：开局钩子、爽点兑现、危机密度、章末钩子、阅读顺滑度，指出最影响追读的3个问题。',
-    '4. 真人写作感：是否有AI味、模板化排比、分镜提纲感、功能性喊话过多、系统提示半框格式；只列具体章节和可执行修法。',
-    '5. 角色与口吻：主角吐槽、判断、害怕、行动是否稳定；重要配角是否口吻漂移。',
-    '6. 搜打撤/系统规则：搜、打、撤是否形成选择与代价；系统提示是否独立成行并整行用【】包住；规则是否前后矛盾。',
-    '7. 伏笔与读者期待台账：列出新增、推进、回收、拖欠，标明下一阶段优先回应项。',
-    '8. 下一阶段写作指令：给后续5章的具体提醒，必须能直接喂给自动写作，不要泛泛建议。',
-    buildVoiceDriftGuard(project),
-    buildReaderExpectationGuide(),
-    buildPlatformStrategyGuide(project, automation),
-    buildAutomationMemoryGuide(project, automation),
-    '长篇蓝图：',
-    automation.masterPlan || '',
-    buildAuthorPersonaGuide(automation.authorPersona),
-    '最近20张章节卡（用于核对剧情轨道，不要按写法字段硬扣）：',
-    recentCards.map((card, cardIndex) => formatChapterCard(card, Math.max(1, currentCount - recentCards.length + 1) + cardIndex)).join('\n\n'),
-    '最近20章摘要：',
-    ...recentChapters.map((chapter) => `${chapter.title}\n${chapter.summary}`),
-    '最近5章正文抽样（用于检查真人读感、系统格式、动作/对话自然度）：',
-    recentFullText,
-    '角色资料：',
-    project.characters.map((character) => `${character.name}/${character.role}/${character.goal}/${character.secret}`).join('\n'),
-    '时间线：',
-    project.timeline.map((item) => `${item.order}.${item.title} - ${item.impact}`).join('\n'),
-  ].join('\n');
-
   try {
-    const text = await callDeepSeek({ apiKey, model, baseUrl, temperature: 0.7, userPrompt: prompt });
-    const nextProject = buildProjectPayload({
-      ...project,
-      automation: {
-        ...automation,
-        ...storeCheckpointReport(automation, text),
-        waitingForReview: true,
-        lastCheckpointAt: project.chapters.length,
-        progressNotes: `已完成第 ${project.chapters.length} 章检查，等待用户确认`,
-        status: 'checkpoint',
-      },
-    });
-    req.db.projects[index] = nextProject;
-    await writeDb(req.db);
-    res.json({ text, project: nextProject });
+    const result = await generateCheckpointReportForProject({ db: req.db, projectIndex: index, project, apiKey, model, baseUrl, requestedKind: req.body.kind });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : '检查点分析失败' });
   }
@@ -8258,7 +8336,7 @@ app.post('/api/projects/:id/automation/repair-range', auth, async (req, res) => 
     buildAuthorPersonaGuide(automation.authorPersona),
     buildPlatformStrategyGuide(project, automation),
     buildAutomationMemoryGuide(project, automation),
-    getLatestCheckpointReport(automation) ? '最新20章检查点报告：' : '',
+    getLatestCheckpointReport(automation) ? '最新阶段检查报告：' : '',
     getLatestCheckpointReport(automation) || '',
     '本范围章节卡：',
     plannedCards.map((card, idx) => formatChapterCard(card, start + idx)).join('\n\n'),
@@ -8341,7 +8419,7 @@ app.post('/api/projects/:id/automation/write-to-progress', auth, async (req, res
   const automation = project.automation || {};
   if (!apiKey) return res.status(400).json({ message: '缺少 DeepSeek API Key' });
   if (!automation.masterPlan) return res.status(400).json({ message: '请先生成长篇规划' });
-  if (automation.waitingForReview) return res.status(400).json({ message: '已到 20 章检查点，请先确认是否继续' });
+  if (automation.waitingForReview) return res.status(400).json({ message: '已到检查点或审校暂停，请先确认是否继续' });
 
   const writeState = getAutomationWriteState(project);
   const currentCount = writeState.writtenCount;
@@ -8350,7 +8428,7 @@ app.post('/api/projects/:id/automation/write-to-progress', auth, async (req, res
     return res.status(400).json({ message: '目标进度必须大于当前章节数' });
   }
 
-  const chaptersUntilCheckpoint = currentCount % 20 === 0 ? 20 : 20 - (currentCount % 20);
+  const { remaining: chaptersUntilCheckpoint } = getNextCheckpointInfo(currentCount);
   const batchCount = Math.min(desiredTarget - currentCount, chaptersUntilCheckpoint);
   if (batchCount <= 0) {
     return res.status(400).json({ message: '本次推进章节数计算异常，请重新设置目标章节' });

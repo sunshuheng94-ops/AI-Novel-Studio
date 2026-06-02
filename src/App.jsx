@@ -173,9 +173,19 @@ function getPlatformStrategy(project) {
   };
 }
 
-const appVersion = '1.8.1';
+const appVersion = '1.8.2';
 
 const changelogItems = [
+  {
+    version: '1.8.2',
+    date: '2026-05-29',
+    title: '100章大阶段检查',
+    changes: [
+      '在20章阶段检查之外新增100章大检查，自动复盘主线偏移、卷结构、角色成长、伏笔拖欠和爽点密度。',
+      '自动写到20/40/60/80章触发普通阶段检查，写到100/200/300章触发100章大阶段检查并生成报告。',
+      '检查报告末尾新增阶段建议，明确提示是否需要继续写、重排章节卡、重新自动分卷或保存建议到蓝图。',
+    ],
+  },
   {
     version: '1.8.1',
     date: '2026-05-29',
@@ -516,7 +526,7 @@ const changelogItems = [
       '长篇蓝图、章节卡、自动写作、检查点和范围修订接入平台策略，支持刺猬猫口味、番茄节奏和起点长篇结构组合。',
       '自动排章节卡新增本章爽点、平台适配、系统规则字段，并写入后续正文生成提示。',
       '每章生成后自动更新伏笔、读者期待、爽点、角色状态、系统规则和章节功能日历。',
-      '20章检查点会读取结构化记忆，检查爽点曲线、期待拖欠、伏笔状态、角色热度、系统规则漂移和章节功能分布。',
+      '阶段检查会读取结构化记忆，20章检查连续性，100章大检查复盘卷结构、主线偏移、角色成长和后续操作建议。',
       '前端 AI 长篇中心新增平台策略配置和自动记忆计数展示。',
     ],
   },
@@ -2126,7 +2136,7 @@ export default function App() {
         setSelectedChapterId(data.project.chapters.at(-1)?.id || selectedChapterId);
         setWritingProgress({ label: '继续自动写作', current: index + 1, total, chapter: chapterNumber, note: `已完成第 ${chapterNumber} 章` });
 
-        if (data.pausedForReview || data.project.automation?.waitingForReview || data.project.automation?.status === 'review') {
+        if (data.pausedForReview || data.project.automation?.waitingForReview || data.project.automation?.status === 'review' || data.project.automation?.status === 'checkpoint') {
           pauseMessage = data.project.automation?.progressNotes || `第 ${chapterNumber} 章需要确认，已暂停自动写作`;
           setStatus(pauseMessage);
           break;
@@ -2305,7 +2315,7 @@ export default function App() {
         setSelectedChapterId(data.project.chapters.at(-1)?.id || selectedChapterId);
         setWritingProgress({ label: '写到指定进度', current: completed, total, chapter: chapterNumber, note: `已完成第 ${chapterNumber} 章` });
 
-        if (data.pausedForReview || data.project.automation?.waitingForReview || data.project.automation?.status === 'review') {
+        if (data.pausedForReview || data.project.automation?.waitingForReview || data.project.automation?.status === 'review' || data.project.automation?.status === 'checkpoint') {
           pauseMessage = data.project.automation?.progressNotes || `第 ${chapterNumber} 章需要确认，已暂停自动推进`;
           setStatus(pauseMessage);
           break;
@@ -2313,7 +2323,7 @@ export default function App() {
         if (reachedCheckpoint || !data.chapters?.length) break;
       }
 
-      setStatus(stopAiWritingRef.current ? `已中断自动推进，本轮完成 ${completed} 章` : pauseMessage || (reachedCheckpoint ? '已到20章检查点，请先确认' : '已自动推进到新的写作进度'));
+      setStatus(stopAiWritingRef.current ? `已中断自动推进，本轮完成 ${completed} 章` : pauseMessage || (reachedCheckpoint ? '已到检查点，请先确认' : '已自动推进到新的写作进度'));
     } catch (error) {
       setStatus(isAbortError(error) ? `已中断自动推进，本轮完成 ${completed} 章` : error.message || '自动推进失败');
     } finally {
@@ -2324,14 +2334,15 @@ export default function App() {
     }
   }
 
-  async function runCheckpointReview() {
+  async function runCheckpointReview(kind = '') {
     if (!selectedProject) return;
+    const label = kind === 'major' ? '100章大阶段检查报告' : '阶段检查报告';
     try {
       setLoading(true);
-      setStatus(withAiLabel('正在生成20章一致性检查报告', aiConfig, 'checkpoint'));
+      setStatus(withAiLabel(`正在生成${label}`, aiConfig, 'checkpoint'));
       const data = await api(`/api/projects/${selectedProject.id}/automation/checkpoint`, {
         method: 'POST',
-        body: JSON.stringify(aiConfig),
+        body: JSON.stringify({ ...aiConfig, kind }),
       });
       setAiOutput(data.text || '');
       setProjects((current) => current.map((item) => (item.id === data.project.id ? data.project : item)));
@@ -2341,9 +2352,74 @@ export default function App() {
         reports: data.project.automation?.checkpointReports || current.reports,
         retentionCount: data.project.automation?.checkpointRetentionCount || current.retentionCount || 20,
       }));
-      setStatus('已完成20章一致性检查，等待你确认');
+      setStatus(`已完成${data.label || label}，等待你确认`);
     } catch (error) {
       setStatus(error.message || '检查点分析失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveCheckpointAdviceToBlueprint() {
+    if (!selectedProject || !checkpointPanel.currentReport) return;
+    const addition = [
+      '',
+      `【阶段检查建议｜第${currentWrittenChapterCount || selectedProject.chapters.length}章】`,
+      checkpointPanel.currentReport,
+    ].join('\n');
+    const nextProject = {
+      ...selectedProject,
+      automation: {
+        ...selectedProject.automation,
+        masterPlan: `${selectedProject.automation?.masterPlan || ''}${addition}`,
+        progressNotes: '已将阶段检查建议追加到长篇蓝图，后续分卷、章节卡和自动写作会参考新版蓝图',
+      },
+    };
+    try {
+      setLoading(true);
+      const saved = await api(`/api/projects/${selectedProject.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(nextProject),
+      });
+      setProjects((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      setBlueprintDraft(saved.automation?.masterPlan || '');
+      setStatus('已把阶段检查建议追加到长篇蓝图');
+    } catch (error) {
+      setStatus(error.message || '保存检查建议到蓝图失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function rerankFutureChapterCardsFromCheckpoint() {
+    if (!selectedProject) return;
+    const targetChapter = Number(automationDraft.chapterCardTargetChapter) || Number(selectedProject.automation?.targetChapters) || 600;
+    const keepCount = currentWrittenChapterCount;
+    const existingCards = selectedProject.automation?.chapterCards || [];
+    if (targetChapter <= keepCount) {
+      setStatus(`目标章节必须大于当前正文进度第 ${keepCount} 章`);
+      return;
+    }
+    const nextProject = {
+      ...selectedProject,
+      automation: {
+        ...selectedProject.automation,
+        chapterCards: existingCards.slice(0, keepCount),
+        progressNotes: `已保留前 ${keepCount} 张章节卡，准备按阶段检查建议重排后续章节卡`,
+      },
+    };
+    try {
+      setLoading(true);
+      const saved = await api(`/api/projects/${selectedProject.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(nextProject),
+      });
+      setProjects((current) => current.map((item) => (item.id === saved.id ? saved : item)));
+      setAutomationDraft((current) => ({ ...current, chapterCardTargetChapter: targetChapter }));
+      setStatus(`已截断到第 ${keepCount} 张章节卡。请切到自动写作中心点击“自动排章节卡”，重排到第 ${targetChapter} 章。`);
+      setActiveTab('automate');
+    } catch (error) {
+      setStatus(error.message || '准备重排章节卡失败');
     } finally {
       setLoading(false);
     }
@@ -2922,8 +2998,12 @@ export default function App() {
                     <span>{checkpointPanel.reports.length} 条</span>
                   </div>
                   <div className="row wrap">
-                    <button type="button" className="secondary" onClick={runCheckpointReview} disabled={loading}>立即做一致性检查</button>
+                    <button type="button" className="secondary" onClick={() => runCheckpointReview()} disabled={loading}>立即做阶段检查</button>
+                    <button type="button" className="secondary" onClick={() => runCheckpointReview('major')} disabled={loading}>立即做100章大检查</button>
                     <button type="button" className="secondary" onClick={resumeAfterReview} disabled={loading || !selectedProject.automation?.waitingForReview}>用户确认后继续</button>
+                    <button type="button" className="secondary" onClick={rerankFutureChapterCardsFromCheckpoint} disabled={loading || !checkpointPanel.currentReport}>重排后续章节卡</button>
+                    <button type="button" className="secondary" onClick={autoSplitVolumes} disabled={loading || !checkpointPanel.currentReport}>重新自动分卷</button>
+                    <button type="button" className="secondary" onClick={saveCheckpointAdviceToBlueprint} disabled={loading || !checkpointPanel.currentReport}>保存检查建议到蓝图</button>
                     <label className="field-label checkpoint-retention">
                       <span>保留条数</span>
                       <input type="number" min="1" value={checkpointPanel.retentionCount} onChange={(event) => setCheckpointPanel((current) => ({ ...current, retentionCount: Number(event.target.value) || 20 }))} />
@@ -2936,7 +3016,7 @@ export default function App() {
                   <div className="checkpoint-history">
                     {checkpointPanel.reports.slice().reverse().map((report, index) => (
                       <article key={`${report.createdAt || index}-${index}`} className="checkpoint-item">
-                        <strong>{report.createdAt ? report.createdAt.slice(0, 19).replace('T', ' ') : `报告 ${index + 1}`}</strong>
+                        <strong>{report.createdAt ? report.createdAt.slice(0, 19).replace('T', ' ') : `报告 ${index + 1}`} {report.kind === 'major' ? '｜100章大检查' : report.kind === 'standard' ? '｜阶段检查' : ''}</strong>
                         <p>{report.report}</p>
                       </article>
                     ))}
