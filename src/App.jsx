@@ -173,9 +173,19 @@ function getPlatformStrategy(project) {
   };
 }
 
-const appVersion = '1.8.2';
+const appVersion = '1.8.3';
 
 const changelogItems = [
+  {
+    version: '1.8.3',
+    date: '2026-05-29',
+    title: '句子流动性守门',
+    changes: [
+      '轻量生成新增句子流动性约束，减少把“解释少”误写成短句链、缺词台词或分镜标签。',
+      '自然度检测新增连续短句链、短台词链和“不A、不B、也不C”清单腔识别，并用连接修复保持句子自然承接。',
+      '章节卡生成进一步去正文复述化，摘要优先保持目标、事件、结果、限制和钩子的剧情轨道。',
+    ],
+  },
   {
     version: '1.8.2',
     date: '2026-05-29',
