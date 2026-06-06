@@ -1572,6 +1572,12 @@ export default function App() {
           progressLock: `第${order}章只允许推进当前小冲突`,
           allowedBeats: '',
           forbiddenBeats: '禁止提前进入后续大冲突',
+          platformNotes: '',
+          pressureLevel: '',
+          protagonistChoice: '',
+          agencyRecovery: '',
+          chapterReward: '',
+          hookType: '',
           summary: '',
           hook: '',
           status: 'planned',
@@ -3074,6 +3080,7 @@ export default function App() {
                         <button key={card.id} type="button" className={selectedChapterCard?.id === card.id ? 'chapter-card-index active' : 'chapter-card-index'} onClick={() => setSelectedChapterCardId(card.id)}>
                           <strong>#{card.order}</strong>
                           <span>{card.title}</span>
+                          <small>{[card.hookType, card.pressureLevel ? `压力${card.pressureLevel}` : '', card.chapterReward].filter(Boolean).join(' · ') || card.volumeName || '未填写基调字段'}</small>
                         </button>
                       )) : <p className="muted">暂无章节卡，点击“自动排章节卡”生成。</p>}
                     </div>
@@ -3097,47 +3104,59 @@ export default function App() {
                           <textarea placeholder="关键钩子" value={selectedChapterCard.hook || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'hook', event.target.value)} />
                         </div>
                         <div className="story-card-section">
-                          <span>控制参数</span>
-                          <p className="muted">新版本章节卡优先管理剧情轨道：目标、事件、人物、线索、结果、伏笔、爽点和系统规则。下方写法字段属于高级弱信号，通常不需要手动维护。</p>
+                          <span>剧情轨道</span>
+                          <p className="muted">章节卡优先回答“发生什么”：目标、事件、人物、线索、结果、期待、伏笔、爽点、平台适配和系统规则。</p>
                         </div>
                         <div className="story-card-section-grid">
-                          <textarea placeholder="本章目标" value={selectedChapterCard.chapterGoal || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'chapterGoal', event.target.value)} />
-                          <textarea placeholder="核心事件" value={selectedChapterCard.coreEvent || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'coreEvent', event.target.value)} />
-                          <textarea placeholder="出场人物" value={selectedChapterCard.cast || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'cast', event.target.value)} />
-                          <textarea placeholder="关键物件/线索" value={selectedChapterCard.keyClue || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'keyClue', event.target.value)} />
-                          <textarea placeholder="本章结果" value={selectedChapterCard.chapterResult || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'chapterResult', event.target.value)} />
-                          <textarea placeholder="读者预期" value={selectedChapterCard.readerExpectation || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'readerExpectation', event.target.value)} />
-                          <textarea placeholder="上一章遗留动作" value={selectedChapterCard.openAction || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'openAction', event.target.value)} />
-                          <textarea placeholder="伏笔规划" value={selectedChapterCard.foreshadowing || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'foreshadowing', event.target.value)} />
-                          <textarea placeholder="本章爽点/文风落点：信息爽、关系爽、系统短讯、魏杰嘴硬、同人触点、废墟选择等" value={selectedChapterCard.commercialBeat || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'commercialBeat', event.target.value)} />
-                          <textarea placeholder="系统规则" value={selectedChapterCard.systemRule || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'systemRule', event.target.value)} />
+                          <label className="story-card-field"><span>本章目标</span><textarea placeholder="本章要完成的小目标" value={selectedChapterCard.chapterGoal || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'chapterGoal', event.target.value)} /></label>
+                          <label className="story-card-field"><span>核心事件</span><textarea placeholder="本章实际发生的主要事件" value={selectedChapterCard.coreEvent || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'coreEvent', event.target.value)} /></label>
+                          <label className="story-card-field"><span>出场人物</span><textarea placeholder="出场人物和关系位置" value={selectedChapterCard.cast || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'cast', event.target.value)} /></label>
+                          <label className="story-card-field"><span>关键物件/线索</span><textarea placeholder="能改变行动、判断或后续路线的物件/线索" value={selectedChapterCard.keyClue || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'keyClue', event.target.value)} /></label>
+                          <label className="story-card-field"><span>本章结果</span><textarea placeholder="本章落地的结果，不写正文复述" value={selectedChapterCard.chapterResult || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'chapterResult', event.target.value)} /></label>
+                          <label className="story-card-field"><span>读者预期</span><textarea placeholder="读者此章想看到哪个问题被回应" value={selectedChapterCard.readerExpectation || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'readerExpectation', event.target.value)} /></label>
+                          <label className="story-card-field"><span>上一章遗留动作</span><textarea placeholder="承接上一章哪个动作、伤势、物件、隐瞒或选择" value={selectedChapterCard.openAction || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'openAction', event.target.value)} /></label>
+                          <label className="story-card-field"><span>伏笔规划</span><textarea placeholder="本章推进或埋下的可追踪伏笔" value={selectedChapterCard.foreshadowing || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'foreshadowing', event.target.value)} /></label>
+                          <label className="story-card-field"><span>本章爽点/文风落点</span><textarea placeholder="信息爽、关系爽、系统短讯、行动兑现、同人触点等" value={selectedChapterCard.commercialBeat || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'commercialBeat', event.target.value)} /></label>
+                          <label className="story-card-field"><span>平台适配</span><textarea placeholder="平台节奏、读者口味或风险边界" value={selectedChapterCard.platformNotes || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'platformNotes', event.target.value)} /></label>
+                          <label className="story-card-field"><span>系统规则</span><textarea placeholder="金手指、系统提示、能力限制或代价" value={selectedChapterCard.systemRule || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'systemRule', event.target.value)} /></label>
+                        </div>
+                        <div className="story-card-section tone-card-section">
+                          <span>基调控制</span>
+                          <p className="muted">这些字段会进入 5 章基调诊断和正文生成，用来避免轻松作品被连续写成高压追杀，也避免高压作品只剩被动受苦。</p>
+                        </div>
+                        <div className="story-card-section-grid tone-card-grid">
+                          <label className="story-card-field compact"><span>压力等级</span><input placeholder="1-5，或低/中/高" value={selectedChapterCard.pressureLevel || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'pressureLevel', event.target.value)} /></label>
+                          <label className="story-card-field compact"><span>章末钩子类型</span><input placeholder="收益/关系/危险/选择/信息/反差" value={selectedChapterCard.hookType || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'hookType', event.target.value)} /></label>
+                          <label className="story-card-field"><span>主角主动选择</span><textarea placeholder="主角本章主动做出的一个选择，不只被安排或被保护" value={selectedChapterCard.protagonistChoice || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'protagonistChoice', event.target.value)} /></label>
+                          <label className="story-card-field"><span>主角拿回的主动权</span><textarea placeholder="主角用判断、行动、代价或关系换回的局面" value={selectedChapterCard.agencyRecovery || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'agencyRecovery', event.target.value)} /></label>
+                          <label className="story-card-field wide"><span>本章小收获</span><textarea placeholder="能力熟练度、信息、关系升温、物资、位置、信任或下一步选择" value={selectedChapterCard.chapterReward || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'chapterReward', event.target.value)} /></label>
                         </div>
                         <div className="story-card-section">
-                          <span>高级弱信号</span>
-                          <p className="muted">这些字段主要兼容旧章节卡。正文生成会优先读取上方剧情轨道和作者人设。</p>
+                          <span>写作控制</span>
+                          <p className="muted">这些字段主要控制首段、叙事预算和正文禁区。通常只在自动生成效果跑偏时手动维护。</p>
                         </div>
                         <div className="story-card-section-grid">
-                          <textarea placeholder="章节功能：主功能=investigation；副功能=relationship" value={selectedChapterCard.functionMode || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'functionMode', event.target.value)} />
-                          <textarea placeholder="对话密度：low / medium / high（原因）" value={selectedChapterCard.dialogueDensity || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'dialogueDensity', event.target.value)} />
-                          <textarea placeholder="叙述质感：小说感70%，电影感30%；重点=..." value={selectedChapterCard.texturePlan || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'texturePlan', event.target.value)} />
-                          <textarea placeholder="人味锚点：身体状态、生活杂质、记忆触发、对话错位" value={selectedChapterCard.humanTextureBeats || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'humanTextureBeats', event.target.value)} />
-                          <textarea placeholder="正文禁区：禁止说明书式解释、否定排除式冲击..." value={selectedChapterCard.draftingBan || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'draftingBan', event.target.value)} />
-                          <textarea placeholder="章末交付物：本章结尾必须交付的具体后果" value={selectedChapterCard.endingDelivery || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'endingDelivery', event.target.value)} />
+                          <label className="story-card-field"><span>章节功能</span><textarea placeholder="主功能=investigation；副功能=relationship" value={selectedChapterCard.functionMode || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'functionMode', event.target.value)} /></label>
+                          <label className="story-card-field"><span>对话密度</span><textarea placeholder="low / medium / high（原因）" value={selectedChapterCard.dialogueDensity || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'dialogueDensity', event.target.value)} /></label>
+                          <label className="story-card-field"><span>叙述质感</span><textarea placeholder="小说感70%，电影感30%；重点=..." value={selectedChapterCard.texturePlan || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'texturePlan', event.target.value)} /></label>
+                          <label className="story-card-field"><span>人味锚点</span><textarea placeholder="身体状态、生活杂质、记忆触发、对话错位" value={selectedChapterCard.humanTextureBeats || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'humanTextureBeats', event.target.value)} /></label>
+                          <label className="story-card-field"><span>正文禁区</span><textarea placeholder="禁止说明书式解释、否定排除式冲击..." value={selectedChapterCard.draftingBan || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'draftingBan', event.target.value)} /></label>
+                          <label className="story-card-field"><span>章末交付物</span><textarea placeholder="本章结尾必须交付的具体后果" value={selectedChapterCard.endingDelivery || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'endingDelivery', event.target.value)} /></label>
                         </div>
                         <div className="story-card-section-grid">
-                          <textarea placeholder="蓝图阶段" value={selectedChapterCard.paceStage || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'paceStage', event.target.value)} />
+                          <label className="story-card-field"><span>蓝图阶段</span><textarea placeholder="蓝图阶段" value={selectedChapterCard.paceStage || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'paceStage', event.target.value)} /></label>
                           <select value={selectedChapterCard.openingType || 'scene'} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'openingType', event.target.value)}>
                             {openingTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                           </select>
                           <select value={selectedChapterCard.narrativeMode || 'linear'} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'narrativeMode', event.target.value)}>
                             {narrativeModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                           </select>
-                          <textarea placeholder="进度锁" value={selectedChapterCard.progressLock || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'progressLock', event.target.value)} />
-                          <textarea placeholder="本章只允许" value={selectedChapterCard.allowedBeats || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'allowedBeats', event.target.value)} />
-                          <textarea placeholder="本章禁止" value={selectedChapterCard.forbiddenBeats || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'forbiddenBeats', event.target.value)} />
-                          <textarea placeholder="开头锚点" value={selectedChapterCard.openingAnchor || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'openingAnchor', event.target.value)} />
-                          <textarea placeholder="禁止开头" value={selectedChapterCard.openingBan || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'openingBan', event.target.value)} />
-                          <textarea placeholder="叙事目的" value={selectedChapterCard.narrativePurpose || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'narrativePurpose', event.target.value)} />
+                          <label className="story-card-field"><span>进度锁</span><textarea placeholder="进度锁" value={selectedChapterCard.progressLock || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'progressLock', event.target.value)} /></label>
+                          <label className="story-card-field"><span>本章只允许</span><textarea placeholder="本章只允许" value={selectedChapterCard.allowedBeats || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'allowedBeats', event.target.value)} /></label>
+                          <label className="story-card-field"><span>本章禁止</span><textarea placeholder="本章禁止" value={selectedChapterCard.forbiddenBeats || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'forbiddenBeats', event.target.value)} /></label>
+                          <label className="story-card-field"><span>开头锚点</span><textarea placeholder="开头锚点" value={selectedChapterCard.openingAnchor || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'openingAnchor', event.target.value)} /></label>
+                          <label className="story-card-field"><span>禁止开头</span><textarea placeholder="禁止开头" value={selectedChapterCard.openingBan || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'openingBan', event.target.value)} /></label>
+                          <label className="story-card-field"><span>叙事目的</span><textarea placeholder="叙事目的" value={selectedChapterCard.narrativePurpose || ''} onChange={(event) => updateChapterCard(selectedChapterCard.id, 'narrativePurpose', event.target.value)} /></label>
                         </div>
                       </article>
                     ) : null}

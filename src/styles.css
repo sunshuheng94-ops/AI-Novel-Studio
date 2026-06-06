@@ -920,6 +920,16 @@ kbd {
   color: var(--text-soft);
 }
 
+.chapter-card-index small {
+  grid-column: 2;
+  margin-top: -6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 224, 131, 0.72);
+  font-size: 0.72rem;
+}
+
 .chapter-card-index.active {
   border-color: rgba(85, 215, 255, 0.42);
   background: linear-gradient(135deg, rgba(85, 215, 255, 0.16), rgba(255, 107, 200, 0.12));
@@ -1022,6 +1032,41 @@ kbd {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.story-card-field {
+  display: grid;
+  gap: 6px;
+}
+
+.story-card-field > span {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.story-card-field textarea {
+  min-height: 96px;
+}
+
+.story-card-field.compact input {
+  min-height: 44px;
+}
+
+.story-card-field.wide {
+  grid-column: 1 / -1;
+}
+
+.tone-card-section {
+  border-color: rgba(85, 215, 255, 0.28);
+  background: linear-gradient(135deg, rgba(85, 215, 255, 0.12), rgba(255, 107, 200, 0.08));
+}
+
+.tone-card-grid {
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(85, 215, 255, 0.18);
+  background: rgba(85, 215, 255, 0.06);
 }
 
 .assistant-card {
