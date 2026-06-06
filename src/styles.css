@@ -1575,6 +1575,118 @@ kbd {
   line-height: 1.65;
 }
 
+.tone-cockpit {
+  display: grid;
+  gap: 16px;
+}
+
+.tone-cockpit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tone-drift-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.42rem 0.64rem;
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.tone-drift-switch input {
+  width: auto;
+  accent-color: var(--mint);
+}
+
+.tone-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tone-mode-card {
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: none;
+  text-align: left;
+}
+
+.tone-mode-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.tone-mode-card.active {
+  border-color: rgba(255, 107, 200, 0.72);
+  background: linear-gradient(135deg, rgba(255, 107, 200, 0.18), rgba(85, 215, 255, 0.12));
+  box-shadow: 0 0 28px rgba(255, 107, 200, 0.12);
+}
+
+.tone-mode-card small,
+.tone-mix-panel small {
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.tone-mix-panel {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.tone-mix-head,
+.tone-slider {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 10px;
+}
+
+.tone-mix-head {
+  grid-template-columns: 1fr auto;
+  color: var(--text-soft);
+}
+
+.tone-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--pink);
+}
+
+.tone-slider strong {
+  text-align: right;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+
+.tone-drift-brief {
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 224, 131, 0.1);
+  border: 1px solid rgba(255, 224, 131, 0.24);
+}
+
+.tone-drift-brief p {
+  margin: 6px 0 0;
+  color: var(--text-soft);
+}
+
 .mode-pill {
   display: inline-flex;
   width: fit-content;
@@ -2000,6 +2112,15 @@ kbd {
   .command-buttons,
   .command-buttons.two {
     grid-template-columns: 1fr;
+  }
+
+  .tone-mode-grid,
+  .tone-slider {
+    grid-template-columns: 1fr;
+  }
+
+  .tone-slider strong {
+    text-align: left;
   }
 
   .assistant-showcase-card {

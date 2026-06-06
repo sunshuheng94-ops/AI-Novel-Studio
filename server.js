@@ -212,6 +212,12 @@ function createProjectTemplate(payload = {}, ownerId) {
       chapterCards: Array.isArray(payload.automation?.chapterCards) ? payload.automation.chapterCards : [],
       lightweightGeneration: Boolean(payload.automation?.lightweightGeneration),
       authorPersona: normalizeText(payload.automation?.authorPersona),
+      toneSettings: normalizeToneSettings(payload.automation?.toneSettings),
+      toneProtocol: normalizeText(payload.automation?.toneProtocol),
+      toneDriftEnabled: payload.automation?.toneDriftEnabled !== false,
+      toneDriftReport: normalizeText(payload.automation?.toneDriftReport),
+      toneDriftReports: trimToneDriftReports(payload.automation || {}),
+      lastToneDriftAt: Number(payload.automation?.lastToneDriftAt) || 0,
       platformStrategy: normalizePlatformStrategy(payload.automation?.platformStrategy, payload),
       foreshadowingLedger: normalizeAutomationLedger('foreshadowingLedger', payload.automation?.foreshadowingLedger),
       readerExpectations: normalizeAutomationLedger('readerExpectations', payload.automation?.readerExpectations),
@@ -467,6 +473,12 @@ function buildProjectPayload(project) {
       lightweightGeneration: Boolean(project.automation?.lightweightGeneration),
       continuityMemory: normalizeText(project.automation?.continuityMemory),
       authorPersona: normalizeText(project.automation?.authorPersona),
+      toneSettings: normalizeToneSettings(project.automation?.toneSettings),
+      toneProtocol: normalizeText(project.automation?.toneProtocol),
+      toneDriftEnabled: project.automation?.toneDriftEnabled !== false,
+      toneDriftReport: normalizeText(project.automation?.toneDriftReport),
+      toneDriftReports: trimToneDriftReports(project.automation || {}),
+      lastToneDriftAt: Number(project.automation?.lastToneDriftAt) || 0,
       platformStrategy: normalizePlatformStrategy(project.automation?.platformStrategy, project),
       foreshadowingLedger: normalizeAutomationLedger('foreshadowingLedger', project.automation?.foreshadowingLedger),
       readerExpectations: normalizeAutomationLedger('readerExpectations', project.automation?.readerExpectations),
@@ -513,6 +525,10 @@ function resetAutomationRuntimeState(automation = {}, progressNotes = '已清空
     lastCheckpointAt: 0,
     checkpointReport: '',
     checkpointReports: [],
+    toneDriftReport: '',
+    toneDriftReports: [],
+    toneDriftEnabled: automation.toneDriftEnabled !== false,
+    lastToneDriftAt: 0,
     lastRepairReport: '',
     waitingForReview: false,
     totalGeneratedWords: 0,
@@ -1096,6 +1112,11 @@ function formatChapterCard(card = {}, fallbackNumber = 1, options = {}) {
     card.commercialBeat ? `本章爽点：${card.commercialBeat}` : '',
     card.platformNotes ? `平台适配：${card.platformNotes}` : '',
     card.systemRule ? `系统规则：${card.systemRule}` : '',
+    card.pressureLevel ? `压力等级：${card.pressureLevel}` : '',
+    card.protagonistChoice ? `主角主动选择：${card.protagonistChoice}` : '',
+    card.agencyRecovery ? `主角拿回的主动权：${card.agencyRecovery}` : '',
+    card.chapterReward ? `本章小收获：${card.chapterReward}` : '',
+    card.hookType ? `章末钩子类型：${card.hookType}` : '',
     `摘要：${card.summary || ''}`,
     `钩子：${card.hook || ''}`,
   ];
@@ -1699,9 +1720,14 @@ function parseGeneratedChapterCardSection({ section, order, plannedOpening = {},
   const readerExpectation = extractLabeledField(section, ['读者预期', '读者期待', '本章读者预期'], ['上一章遗留动作', '遗留动作', '伏笔规划', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
   const openAction = extractLabeledField(section, ['上一章遗留动作', '遗留动作', '承接动作'], ['伏笔规划', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']) || (order === 1 ? '从开局直接进入本章局部冲突' : `承接第${order - 1}章的结果，推进第${order}章当前局部冲突`);
   const foreshadowing = extractLabeledField(section, ['伏笔规划', '伏笔账本', '伏笔'], ['本章爽点', '爽点', '爽点类型', '兑现方式', '平台适配', '平台策略', '平台口味', '系统规则', '金手指规则', '能力限制', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
-  const commercialBeat = extractLabeledField(section, ['本章爽点', '爽点', '爽点类型', '兑现方式'], ['系统规则', '平台适配', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
-  const platformNotes = extractLabeledField(section, ['平台适配', '平台策略', '平台口味'], ['系统规则', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
-  const systemRule = extractLabeledField(section, ['系统规则', '金手指规则', '能力限制'], ['摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
+  const commercialBeat = extractLabeledField(section, ['本章爽点', '爽点', '爽点类型', '兑现方式'], ['系统规则', '平台适配', '压力等级', '主角主动选择', '主角拿回的主动权', '本章小收获', '章末钩子类型', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
+  const platformNotes = extractLabeledField(section, ['平台适配', '平台策略', '平台口味'], ['系统规则', '压力等级', '主角主动选择', '主角拿回的主动权', '本章小收获', '章末钩子类型', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
+  const systemRule = extractLabeledField(section, ['系统规则', '金手指规则', '能力限制'], ['压力等级', '主角主动选择', '主角拿回的主动权', '本章小收获', '章末钩子类型', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
+  const pressureLevel = extractLabeledField(section, ['压力等级', '章节压力', '压力预算'], ['主角主动选择', '主角拿回的主动权', '本章小收获', '章末钩子类型', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
+  const protagonistChoice = extractLabeledField(section, ['主角主动选择', '主动选择', '本章主动选择'], ['主角拿回的主动权', '本章小收获', '章末钩子类型', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
+  const agencyRecovery = extractLabeledField(section, ['主角拿回的主动权', '主动权回收', '拿回主动权'], ['本章小收获', '章末钩子类型', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
+  const chapterReward = extractLabeledField(section, ['本章小收获', '本章获得感', '小收获', '获得感'], ['章末钩子类型', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
+  const hookType = extractLabeledField(section, ['章末钩子类型', '钩子类型'], ['摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
   const openingType = plannedOpening.openingType || parsedOpeningType || 'scene';
   const narrativeMode = plannedOpening.narrativeMode || normalizeNarrativeMode(extractLabeledField(section, ['叙事手法', '叙事模式', '叙事方式'], ['叙事目的', '进度锁', '本章只允许', '本章禁止', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']), order);
   const parsedNarrativePurpose = extractLabeledField(section, ['叙事目的', '手法目的', '使用目的'], ['章节功能', '对话密度', '叙述质感', '人味锚点', '正文禁区', '章末交付物', '进度锁', '本章只允许', '本章禁止', '摘要', '本章摘要', '章节摘要', '关键钩子', '钩子']);
@@ -1738,6 +1764,11 @@ function parseGeneratedChapterCardSection({ section, order, plannedOpening = {},
     commercialBeat: cleanCardFieldText(commercialBeat) || '本章至少交付一个信息爽、关系爽、系统奖励、行动兑现或期待推进',
     platformNotes: cleanCardFieldText(platformNotes),
     systemRule: cleanCardFieldText(systemRule),
+    pressureLevel: cleanCardFieldText(pressureLevel),
+    protagonistChoice: cleanCardFieldText(protagonistChoice),
+    agencyRecovery: cleanCardFieldText(agencyRecovery),
+    chapterReward: cleanCardFieldText(chapterReward),
+    hookType: cleanCardFieldText(hookType),
     narrativeMode,
     narrativePurpose,
     summary: cleanCardFieldText(summary) || `承接蓝图第${order}章规划，推进本阶段主线并保留章末钩子。`,
@@ -1768,6 +1799,7 @@ function buildAuthorPersonaPrompt({ project, inspiration, minimumWords, targetCh
     `目标读者：${project.targetAudience}`,
     `文风要求：${project.styleGuide}`,
     `灵感：${inspiration}`,
+    buildToneProtocolGuide({ ...project, premise: [project.premise, inspiration].filter(Boolean).join('\n') }, project.automation || {}),
     '要求：',
     '1. 要从灵感反推最适合这本书的叙述人格，不要套模板。',
     '2. 作者人设应追求自然口语和人物反应的真实，不追求刻意碎句。可以有停顿、回避和留白，但普通观察、动作安排、信息确认要顺着人物处境自然写清。禁止模板化、口号化、过度工整，不禁止正常顺滑。',
@@ -1782,6 +1814,263 @@ function buildAuthorPersonaGuide(persona = '') {
   return [
     '作者人设卡：',
     text || '暂无作者人设，按灵感和章节卡自由生成；追求自然口语、人物现场反应和必要留白，但普通观察、动作安排、信息确认要顺着处境写清。避免模板化、口号化和过度工整，不禁止正常顺滑。',
+  ].join('\n');
+}
+
+const toneModeProfiles = {
+  daily: {
+    label: '轻松日常',
+    engine: '小目标 → 小麻烦 → 主角笨拙主动 → 小收获 → 关系升温',
+    pressure: '多数章节保持低到中压力；危险可出现，但通常不要连续升级成生死求生。',
+    agency: '主角的成长优先体现为生活能力、关系信任、小能力熟练度和主动选择变多。',
+    rewards: '食物、住处、技能熟练度、被照顾、被允许靠近、可爱误会解除、关系软化。',
+    hooks: '轻期待、关系变化、小收益、可爱误会、下一个生活目标。',
+    avoid: '连续追杀、长期饥饿受冻、重伤濒危、每章都用更大危险压结尾。',
+    cardFields: '本章日常小目标；本章小麻烦；主角主动尝试；本章小收获；关系升温；章末轻钩子；避免高压写法。',
+  },
+  comedy: {
+    label: '轻喜反差',
+    engine: '正常目标 → 世界观错位 → 主角用奇怪但有效的方式处理 → 旁人误解 → 反差收益',
+    pressure: '压力可以存在，但通常要较快转成误会、笑点、收益或反差小爽。',
+    agency: '主角把弱势、错位、羞耻技能、系统提示或话术变成筹码。',
+    rewards: '旁人误判、奇怪能力有效、低配技能救场、系统互怼、资源或身份保护。',
+    hooks: '新技能羞耻说明、道具失控、旁人误会、系统欠揍任务、下一次糊弄机会。',
+    avoid: '连续审问、追捕、伤势恶化、主角长期只能被拖走或被搜查。',
+    cardFields: '本章正常目标；本章错位点；主角奇怪但有效的处理；旁人误解/反应；本章反差收益；章末轻喜钩子。',
+  },
+  adventure: {
+    label: '冒险成长',
+    engine: '探索目标 → 阻碍 → 判断/能力尝试 → 阶段成果 → 新地图或新线索',
+    pressure: '中等压力为主；危险服务探索和成长，不长期压成单纯逃命。',
+    agency: '主角通过判断、技能练习、路线选择、同伴协作逐步扩大活动范围。',
+    rewards: '新路线、可用资源、能力进步、同伴默契、线索确认、阶段性安全点。',
+    hooks: '新区域、新物件、新伙伴、新规则、新选择。',
+    avoid: '只逃跑不探索、只挨打不成长、连续新增无法收束的谜团。',
+    cardFields: '探索目标；本章阻碍；能力/判断尝试；阶段成果；新线索或新区域；下一步选择。',
+  },
+  power: {
+    label: '爽文升级',
+    engine: '被低估 → 主角准备 → 能力/判断兑现 → 旁人改观 → 奖励或地位提升',
+    pressure: '压力用于衬托兑现，不要长期只写主角吃亏。',
+    agency: '主角最好每章拿回一点主动权，几章内有一次公开高光或结果替他说话。',
+    rewards: '能力兑现、敌人吃亏、队友改观、资源奖励、权限提升、名声变化。',
+    hooks: '扩大优势、下一次兑现、奖励后果、对手重新评估。',
+    avoid: '主角长期被动、胜利只写成勉强活下来、旁人长期无反应。',
+    cardFields: '主角被低估点；主角提前准备；能力/判断兑现；旁人态度变化；本章获得感；下一章可扩大优势。',
+  },
+  survival: {
+    label: '高压求生',
+    engine: '危机 → 取舍 → 代价 → 主角拿回一点主动权 → 短暂喘息或反打窗口',
+    pressure: '可以高压，但连续高压后要给喘息、收益或主动权回收。',
+    agency: '主角可以受伤和失败，但要用判断、取舍或代价换回局面。',
+    rewards: '撤离窗口、救人结果、情报、物资、敌人误判、下一章反打条件。',
+    hooks: '具体选择、路线变化、短暂喘息后的新问题、反打窗口。',
+    avoid: '只挨打、只逃命、只补救、章末只追加更大危险。',
+    cardFields: '本章危机；主角取舍；本章代价；主角拿回的主动权；短暂喘息点；撤离/反打窗口。',
+  },
+  ensemble: {
+    label: '群像史诗',
+    engine: '角色小线 → 阵营压力 → 个人选择 → 多线交汇 → 阶段性代价或胜利',
+    pressure: '允许宏观压力，但每章仍要落在具体人物选择上，不把所有人写成设定传声筒。',
+    agency: '主角和关键配角都要有阶段性主动选择；群像不是削弱主角，而是让主角选择影响更多人。',
+    rewards: '阵营信任、角色改观、局部胜利、关键人物站队、伏笔交汇、阶段性秩序变化。',
+    hooks: '角色立场变化、阵营动作、伏笔交汇、下一条人物线接棒。',
+    avoid: '宏大旁白堆设定、主角工具人化、连续会议说明、配角只发布任务。',
+    cardFields: '本章人物焦点；阵营压力；主角/关键角色选择；多线交汇点；阶段回报；下一条人物线钩子。',
+  },
+};
+
+function normalizeToneSettings(value = {}) {
+  const source = value && typeof value === 'object' ? value : {};
+  const validModes = new Set(Object.keys(toneModeProfiles));
+  const mixSource = source.mix && typeof source.mix === 'object' ? source.mix : {};
+  const defaultMix = { daily: 30, adventure: 40, power: 20, comedy: 10, survival: 0 };
+  const clamp = (number, fallback = 0) => Math.max(0, Math.min(100, Number.isFinite(Number(number)) ? Number(number) : fallback));
+  return {
+    primary: validModes.has(source.primary) ? source.primary : '',
+    mix: {
+      daily: clamp(mixSource.daily, defaultMix.daily),
+      adventure: clamp(mixSource.adventure, defaultMix.adventure),
+      power: clamp(mixSource.power, defaultMix.power),
+      comedy: clamp(mixSource.comedy, defaultMix.comedy),
+      survival: clamp(mixSource.survival, defaultMix.survival),
+    },
+  };
+}
+
+function buildToneMixText(settings = {}) {
+  const mix = normalizeToneSettings(settings).mix;
+  const labels = { daily: '日常', adventure: '冒险', power: '爽点', comedy: '反差', survival: '高压' };
+  return Object.entries(mix)
+    .filter(([, value]) => value > 0)
+    .map(([key, value]) => `${labels[key] || key}${value}%`)
+    .join(' / ');
+}
+
+function inferToneMode(project = {}, automation = {}) {
+  const explicitSettings = normalizeToneSettings(automation.toneSettings);
+  if (explicitSettings.primary && toneModeProfiles[explicitSettings.primary]) return explicitSettings.primary;
+  const text = [project.title, project.genre, project.premise, project.targetAudience, project.styleGuide, automation.inspiration, automation.authorPersona, automation.masterPlan].map(normalizeText).join('\n');
+  if (/轻松|日常|治愈|悠闲|温馨|陪伴|可爱|幼崽|种田|生活/.test(text)) return 'daily';
+  if (/轻喜|沙雕|反差|吐槽|搞笑|欢脱|魔法少女|羞耻|互怼|误会流/.test(text)) return 'comedy';
+  if (/爽文|升级|打脸|装逼|逆袭|无敌|奖励|变强|高光/.test(text)) return 'power';
+  if (/末世|求生|逃杀|追杀|战场|战争|废墟|撤离|搜打撤|高压/.test(text)) return 'survival';
+  if (/冒险|旅行|探索|秘境|宝可梦|异世界|修仙|历练|成长/.test(text)) return 'adventure';
+  return 'adventure';
+}
+
+function resolveToneProfile(project = {}, automation = {}) {
+  const explicit = normalizeText(automation.toneProtocol).trim();
+  const mode = inferToneMode(project, automation);
+  return { mode, profile: toneModeProfiles[mode] || toneModeProfiles.adventure, explicit };
+}
+
+function buildToneProtocolGuide(project = {}, automation = {}) {
+  const { profile, explicit } = resolveToneProfile(project, automation);
+  const mixText = buildToneMixText(automation.toneSettings);
+  return [
+    '【作品基调协议】',
+    explicit ? `用户/项目基调补充：${explicit}` : '',
+    `基调模式：${profile.label}`,
+    mixText ? `混合比例：${mixText}` : '',
+    `剧情发动机：${profile.engine}`,
+    `压力预算：${profile.pressure}`,
+    `主角主动权：${profile.agency}`,
+    `获得感来源：${profile.rewards}`,
+    `章末钩子偏好：${profile.hooks}`,
+    `避免跑偏：${profile.avoid}`,
+    '执行方式：这是软方向，不是机械模板。不要在正文里解释这些规则；让人物选择、现场反馈、旁人反应和小回报自然体现。',
+  ].filter(Boolean).join('\n');
+}
+
+function buildToneChapterCardGuide(project = {}, automation = {}) {
+  const { profile } = resolveToneProfile(project, automation);
+  return [
+    '章节卡基调自适应：',
+    `本书按“${profile.label}”优先组织章节，不要把所有风格都写成危险升级。`,
+    `本基调推荐补充字段：${profile.cardFields}`,
+    '每张卡必须标出压力等级1-5、主角主动选择、主角拿回的主动权、本章小收获/获得感、章末钩子类型。',
+    '这些字段写在既有字段里即可：本章目标/本章结果/本章爽点/读者预期/关键钩子/本章禁止都要体现它们；不要另写正文写法。',
+    '压力等级含义：1松弛日常，2小麻烦，3明确冲突，4高压危机，5生死节点。轻松日常和轻喜反差通常不要连续两章4级以上。',
+    '章末钩子优先按基调选择：可以是轻期待、关系变化、小收益、反差误会、能力兑现、路线选择或反打窗口；不要默认都写“更大危险来了”。',
+  ].join('\n');
+}
+
+const toneDriftRetention = 4;
+
+function trimToneDriftReports(automation = {}) {
+  const reports = Array.isArray(automation.toneDriftReports) ? automation.toneDriftReports : [];
+  return reports.slice(-toneDriftRetention).map((report) => ({
+    chapterCount: Number(report.chapterCount) || 0,
+    createdAt: report.createdAt || now(),
+    summary: normalizeText(report.summary),
+    issues: Array.isArray(report.issues) ? report.issues.map(normalizeText).filter(Boolean).slice(0, 5) : [],
+    suggestions: Array.isArray(report.suggestions) ? report.suggestions.map(normalizeText).filter(Boolean).slice(0, 5) : [],
+    metrics: report.metrics || {},
+  }));
+}
+
+function parsePressureLevel(card = {}, chapter = {}) {
+  const text = [card.pressureLevel, card.summary, card.hook, card.coreEvent, chapter.summary, chapter.content].map(normalizeText).join('\n');
+  const explicit = normalizeText(card.pressureLevel).match(/[1-5]/)?.[0];
+  if (explicit) return Number(explicit);
+  if (/濒死|死亡|围杀|追杀|爆炸|重伤|审问|搜查|敌人逼近|生死|断气|血|山匪|战场|撤离|逃命/.test(text)) return 4;
+  if (/冲突|威胁|危险|受伤|低吼|门外|靠近|包围|名单|警报|倒计时/.test(text)) return 3;
+  if (/小麻烦|误会|练习|找|吃|住|休息|交换|整理|学习|尝试/.test(text)) return 2;
+  return 2;
+}
+
+function isDangerHook(card = {}) {
+  const text = [card.hookType, card.hook, card.readerExpectation, card.summary].map(normalizeText).join('\n');
+  if (/轻期待|关系|小收益|可爱|误会|反差|生活目标|技能|收获|奖励|改观/.test(text)) return false;
+  return /危险|追杀|敌人|门外|低吼|靠近|包围|搜查|审问|重伤|死亡|濒死|爆炸|警报|名单|陷阱|更大危机/.test(text);
+}
+
+function isPassiveChapterSignal(card = {}, chapter = {}) {
+  const activeText = [card.protagonistChoice, card.agencyRecovery, card.chapterReward, card.commercialBeat].map(normalizeText).join('\n');
+  if (/主动|尝试|判断|布置|发现|救下|换来|拿到|获得|学会|改观|信任|反打|误导|解决|完成|收获/.test(activeText)) return false;
+  const text = [card.summary, chapter.summary, chapter.content].map(normalizeText).join('\n');
+  return /被迫|被拖|被抬|被叼|被救|只能|不敢|没敢|等着|靠.*保护|勉强活|逃命|挨打|受伤|搜查|审问/.test(text)
+    && !/主动|判断|布置|发现|救下|拿到|学会|换来|误导|反打|改观/.test(text);
+}
+
+function buildToneDriftSuggestions({ profile, highPressureCount, passiveCount, dangerHookCount } = {}) {
+  const suggestions = [];
+  if (highPressureCount >= 3) {
+    suggestions.push(/轻松日常|轻喜反差/.test(profile.label)
+      ? '后续5章降低压力：至少安排2章生活小目标/错位小麻烦，章末用小收获、误会或关系变化，不再连续追加敌人逼近。'
+      : '后续5章保留压力但加入喘息：每2章至少给一次资源、情报、撤离窗口或反打条件。');
+  }
+  if (passiveCount >= 3) {
+    suggestions.push('后续章节卡补强主角主动选择：让主角用判断、准备、话术、能力练习或代价改变局面，不只被保护、被拖走或补救。');
+  }
+  if (dangerHookCount >= 3) {
+    suggestions.push(`章末钩子换型：优先使用${profile.hooks}，少用“门外又来人/更大危险靠近/伤势恶化”连续压结尾。`);
+  }
+  if (!suggestions.length) suggestions.push('基调暂未明显偏移，后续继续保持当前压力、主动权和章末钩子比例。');
+  suggestions.push('建议只应用到后续3-5张章节卡，下一次5章诊断会自动覆盖旧建议。');
+  return suggestions.slice(0, 4);
+}
+
+function buildToneDriftReport({ project = {}, automation = {}, chapterCount = 0 } = {}) {
+  const written = (project.chapters || []).filter((chapter, idx) => !isBlankStarterChapter(chapter, idx));
+  if (!chapterCount || chapterCount % 5 !== 0 || written.length < 5) return null;
+  const recentChapters = written.slice(-5);
+  const recentCards = (automation.chapterCards || []).slice(Math.max(0, chapterCount - 5), chapterCount);
+  const { profile } = resolveToneProfile(project, automation);
+  const rows = recentChapters.map((chapter, idx) => {
+    const card = recentCards[idx] || {};
+    return {
+      pressure: parsePressureLevel(card, chapter),
+      passive: isPassiveChapterSignal(card, chapter),
+      dangerHook: isDangerHook(card),
+    };
+  });
+  const highPressureCount = rows.filter((row) => row.pressure >= 4).length;
+  const passiveCount = rows.filter((row) => row.passive).length;
+  const dangerHookCount = rows.filter((row) => row.dangerHook).length;
+  const issues = [
+    highPressureCount >= 3 ? `最近5章高压章节偏多：${highPressureCount}/5。` : '',
+    passiveCount >= 3 ? `最近5章主角主动权偏低：${passiveCount}/5。` : '',
+    dangerHookCount >= 3 ? `最近5章危险钩子偏多：${dangerHookCount}/5。` : '',
+  ].filter(Boolean);
+  const suggestions = buildToneDriftSuggestions({ profile, highPressureCount, passiveCount, dangerHookCount });
+  return {
+    chapterCount,
+    createdAt: now(),
+    summary: issues.length ? `第${chapterCount}章基调偏移诊断：${issues.join('')}` : `第${chapterCount}章基调偏移诊断：近期基调稳定。`,
+    issues,
+    suggestions,
+    metrics: { highPressureCount, passiveCount, dangerHookCount, sampleSize: recentChapters.length },
+  };
+}
+
+function storeToneDriftReport(automation = {}, report = null) {
+  if (!report) return automation;
+  const reports = trimToneDriftReports({ ...automation, toneDriftReports: [...(automation.toneDriftReports || []), report] });
+  return {
+    ...automation,
+    toneDriftReport: [report.summary, ...report.suggestions.map((item) => `- ${item}`)].join('\n'),
+    toneDriftReports: reports,
+    lastToneDriftAt: report.chapterCount,
+  };
+}
+
+function maybeUpdateToneDriftAfterWrite({ project = {}, automation = {}, chapterCount = 0 } = {}) {
+  if (automation.toneDriftEnabled === false) return automation;
+  if (!chapterCount || chapterCount % 5 !== 0 || Number(automation.lastToneDriftAt) === chapterCount) return automation;
+  const report = buildToneDriftReport({ project, automation, chapterCount });
+  return storeToneDriftReport(automation, report);
+}
+
+function buildToneDriftGuide(automation = {}) {
+  if (automation.toneDriftEnabled === false) return '';
+  const report = normalizeText(automation.toneDriftReport).trim();
+  if (!report) return '';
+  return [
+    '【最新基调偏移诊断】',
+    report,
+    '使用方式：只作为后续3-5章的轻提醒，优先修章节发动机和章末钩子，不要把诊断文字写进正文；下一次5章诊断会覆盖旧建议。',
   ].join('\n');
 }
 
@@ -1922,6 +2211,11 @@ function sanitizeChapterCardForHumanEngine(card = {}, chapterNumber = 1) {
     foreshadowing: stripInstructionNoise(card.foreshadowing),
     commercialBeat: stripInstructionNoise(card.commercialBeat),
     systemRule: stripInstructionNoise(card.systemRule),
+    pressureLevel: stripInstructionNoise(card.pressureLevel),
+    protagonistChoice: stripInstructionNoise(card.protagonistChoice),
+    agencyRecovery: stripInstructionNoise(card.agencyRecovery),
+    chapterReward: stripInstructionNoise(card.chapterReward),
+    hookType: stripInstructionNoise(card.hookType),
     summary: stripInstructionNoise(card.summary),
     hook: stripInstructionNoise(card.hook),
   };
@@ -1934,6 +2228,8 @@ function buildHumanWritingSystemGuide({ project = {}, automation = {}, card = {}
     buildHumanWebNovelReadabilityGuide(),
     buildHumanWritingPatternLibrary(project),
     buildCharacterVoiceModel(project),
+    buildToneProtocolGuide(project, automation),
+    buildToneDriftGuide(automation),
     buildAuthorPersonaGuide(automation.authorPersona),
     card && Object.keys(card).length ? '本章剧情卡只回答“发生什么”，不要把它改写成控制参数表：' : '',
     card && Object.keys(card).length ? formatChapterCard(card, chapterNumber) : '',
@@ -1955,7 +2251,11 @@ function assembleStoryContext({ project = {}, automation = {}, card = {}, chapte
   const cleanCard = sanitizeChapterCardForHumanEngine(card, chapterNumber);
   const recentChapters = (project.chapters || []).filter((chapter, idx) => !isBlankStarterChapter(chapter, idx)).slice(-5);
   const currentStage = cleanCard.paceStage || project.volumes?.[0]?.positioning || '开篇阶段';
+  const tone = resolveToneProfile(project, automation);
   return {
+    toneMode: tone.profile.label,
+    toneEngine: tone.profile.engine,
+    toneHooks: tone.profile.hooks,
     projectPromise: normalizeText(project.premise || project.summary || automation.inspiration || '').slice(0, 360),
     currentStage: normalizeText(currentStage).slice(0, 180),
     chapterGoal: normalizeText(cleanCard.chapterGoal || cleanCard.allowedBeats || cleanCard.summary || '').slice(0, 260),
@@ -1965,6 +2265,11 @@ function assembleStoryContext({ project = {}, automation = {}, card = {}, chapte
     result: normalizeText(cleanCard.chapterResult || cleanCard.hook || '').slice(0, 260),
     readerQuestion: normalizeText(cleanCard.readerExpectation || cleanCard.hook || '').slice(0, 220),
     systemBoundary: normalizeText(cleanCard.systemRule || '').slice(0, 260),
+    pressureLevel: normalizeText(cleanCard.pressureLevel || '').slice(0, 120),
+    protagonistChoice: normalizeText(cleanCard.protagonistChoice || '').slice(0, 220),
+    agencyRecovery: normalizeText(cleanCard.agencyRecovery || '').slice(0, 220),
+    chapterReward: normalizeText(cleanCard.chapterReward || '').slice(0, 220),
+    hookType: normalizeText(cleanCard.hookType || '').slice(0, 120),
     previousTail: previousChapter ? normalizeText(previousChapter.content).slice(-420) : '',
     nextDirection: nextCard ? normalizeText(nextCard.summary || nextCard.hook || '').slice(0, 220) : '',
     recentSummaries: recentChapters.map((chapter) => `${chapter.title}：${chapter.summary || takeSummaryLine(chapter.content)}`).join('\n').slice(0, 900),
@@ -1974,15 +2279,20 @@ function assembleStoryContext({ project = {}, automation = {}, card = {}, chapte
 function buildSceneDramaturgyPlan({ project = {}, storyContext = {}, card = {}, previousChapter = null } = {}) {
   const text = [project.title, project.premise, project.styleGuide, card.summary, card.coreEvent, card.hook].map(normalizeText).join('\n');
   const isWeiJie = /魏杰|明日方舟|博士|罗德岛|搜打撤/.test(text);
+  const isSoftTone = /轻松日常|轻喜反差/.test(storyContext.toneMode || '');
   return [
     '【场景戏剧计划】',
-    previousChapter ? '开场：接住上一场遗留的动作、伤势、物件或沉默，让人物已经在处理麻烦。' : '开场：人物已经处在麻烦里，先给身体/声音/物件/对话压力，再让读者跟着人物补背景。',
-    `本章欲望：${storyContext.chapterGoal || '先活下来，并拿到一个能推动下一步的结果'}`,
-    `第一错误行动：主角按旧经验或玩家经验做一个动作，现场马上迫使他换动作。`,
+    previousChapter ? '开场：接住上一场遗留的动作、物件、关系余波或小麻烦，让人物已经在处理当前目标。' : (isSoftTone ? '开场：先给一个生活化目标、错位麻烦或可执行的小需求，不默认用生死危险压场。' : '开场：人物已经处在麻烦里，先给身体/声音/物件/对话压力，再让读者跟着人物补背景。'),
+    `本书基调发动机：${storyContext.toneEngine || '按当前项目基调推进'}`,
+    `本章欲望：${storyContext.chapterGoal || (isSoftTone ? '完成一个小目标，并换来一点安心、关系或能力回报' : '先活下来，并拿到一个能推动下一步的结果')}`,
+    `主角主动选择：${storyContext.protagonistChoice || '让主角至少做一次会改变局面的小选择，不只被安排或被保护'}`,
+    `第一尝试：主角按自己的经验、性格或当前资源做一个动作，现场反馈让他调整。`,
     `现实打断：${storyContext.keyClue || '声音、物件、伤势、系统短讯或角色质问打断解释'}`,
-    `信息奖励：${storyContext.result || storyContext.readerQuestion || '只落地一个能改变路线/关系/选择的信息'}`,
+    `主动权回收：${storyContext.agencyRecovery || storyContext.result || '让主角用判断、行动或代价换回一点局面，不让本章只停在被动受压'}`,
+    `本章小收获：${storyContext.chapterReward || storyContext.result || storyContext.readerQuestion || '只落地一个能改变路线、关系、能力熟练度或下一步选择的回报'}`,
     isWeiJie ? '魏杰处理方式：身体先怂，嘴上短促自嘲；认出原作信息后先利用，不在危险中考据。' : '主角处理方式：先露出性格，再做选择；不要只复述任务。',
     `章末停点：${card.hook || '停在一个必须马上选择或处理的动作前'}`,
+    `钩子类型偏好：${storyContext.hookType || storyContext.toneHooks || '具体动作、关系变化、小收益或下一步选择'}`,
   ].join('\n');
 }
 
@@ -2025,6 +2335,8 @@ function buildHumanWritingEnginePrompt({ project = {}, automation = {}, card = {
     '工作顺序：先理解人物处境和欲望，再安排错误行动与现实打断，再让信息从动作中露出，最后停在具体选择前。',
     buildHumanWritingPatternLibrary(project),
     buildStyleResolverGuide(project, automation),
+    buildToneProtocolGuide(project, automation),
+    buildToneDriftGuide(automation),
     buildCharacterVoiceModel(project),
     buildVoiceRosterGuide({ project, card: cleanCard }),
     buildAuthorPersonaGuide(automation.authorPersona),
@@ -2071,6 +2383,11 @@ function buildHumanWritingEnginePrompt({ project = {}, automation = {}, card = {
     storyContext.cast ? `在场人物：${storyContext.cast}` : '',
     storyContext.keyClue ? `关键物件/线索：${storyContext.keyClue}` : '',
     storyContext.systemBoundary ? `系统边界：${storyContext.systemBoundary}` : '',
+    storyContext.pressureLevel ? `压力等级：${storyContext.pressureLevel}` : '',
+    storyContext.protagonistChoice ? `主角主动选择：${storyContext.protagonistChoice}` : '',
+    storyContext.agencyRecovery ? `主角拿回的主动权：${storyContext.agencyRecovery}` : '',
+    storyContext.chapterReward ? `本章小收获/获得感：${storyContext.chapterReward}` : '',
+    storyContext.hookType ? `章末钩子类型：${storyContext.hookType}` : '',
     storyContext.previousTail ? `承接末段：${storyContext.previousTail}` : '',
     storyContext.recentSummaries ? `最近摘要：\n${storyContext.recentSummaries}` : '',
     storyContext.nextDirection ? `下一章方向只作章末影子：${storyContext.nextDirection}` : '',
@@ -6207,7 +6524,8 @@ async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, pr
     '7. 类型经验有边界：游戏、原作、系统或套路经验只用于初始误判、快速判断或被现实纠正；遇到真实伤痛、救人和关系冲突时优先写现场证据和人物选择。',
     '8. 系统提示只改变动作：系统提示必须独立成行、整行【】包住，只给目标、限制、风险、异常、奖励或代价，不能替作者讲世界观。',
     '9. 环境服务行动：每个环境段只保留会改变路线、遮挡视线、暴露敌人或提供可利用物的1-2个细节。',
-    '10. 首稿不要自我检查式写作：不要为了满足规则而逐条展示技巧，先让人物在麻烦里自然行动；详细检测交给后处理。',
+    '10. 基调优先自然落地：轻松日常优先写生活小目标、小麻烦、小收获和关系软化；轻喜反差优先写错位误会、奇怪但有效的处理和反差收益；高压求生也要让主角用判断或代价换回一点主动权。不要把所有作品都写成连续追杀、受伤和更大危险靠近。',
+    '11. 首稿不要自我检查式写作：不要为了满足规则而逐条展示技巧，先让人物在麻烦里自然行动；详细检测交给后处理。',
     '作品信息：',
     `作品名：${project.title}`,
     `题材：${project.genre}`,
@@ -6215,6 +6533,8 @@ async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, pr
     `核心设定：${project.premise}`,
     '作者人设：',
     automation.authorPersona || '',
+    buildToneProtocolGuide(project, automation),
+    buildToneDriftGuide(automation),
     '长篇蓝图：',
     automation.masterPlan || '',
     buildAutomationMemoryGuide(project, automation),
@@ -6497,26 +6817,28 @@ async function generateAndPersistQualityChapters({ req, projectIndex, project, a
       const checkpointLabel = reachCheckpoint ? getCheckpointLabel(checkpointKind) : '';
       const reachedTarget = targetProgress ? nextCount >= targetProgress : generatedChapters.length >= batchCount;
       const shouldPauseForReview = getAutomationReviewPause(warnings);
+      const automationBeforeToneDrift = {
+        ...automation,
+        ...ledgerUpdate,
+        continuityMemory: buildContinuityMemoryUpdate(generatedChapters, startChapter, automation.continuityMemory),
+        totalGeneratedWords: (automation.totalGeneratedWords || 0) + batchWords,
+        targetProgress: targetProgress || automation.targetProgress,
+        waitingForReview: reachCheckpoint || shouldPauseForReview,
+        status: shouldPauseForReview ? 'review' : reachCheckpoint ? 'checkpoint' : reachedTarget ? 'paused' : 'writing',
+        progressNotes: warnings.length
+          ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，但有警告：${warnings.join('；')}`
+          : reachCheckpoint
+            ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，触发 ${checkpointLabel}`
+            : reachedTarget
+              ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，达到指定进度`
+              : `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，继续朝第 ${targetProgress || initialState.writtenCount + batchCount} 章推进`,
+      };
+      const projectBeforeToneDrift = { ...project, chapters: chaptersForProject, automation: automationBeforeToneDrift };
 
       persistedProject = buildProjectPayload({
         ...project,
         chapters: chaptersForProject,
-        automation: {
-          ...automation,
-          ...ledgerUpdate,
-          continuityMemory: buildContinuityMemoryUpdate(generatedChapters, startChapter, automation.continuityMemory),
-          totalGeneratedWords: (automation.totalGeneratedWords || 0) + batchWords,
-          targetProgress: targetProgress || automation.targetProgress,
-          waitingForReview: reachCheckpoint || shouldPauseForReview,
-          status: shouldPauseForReview ? 'review' : reachCheckpoint ? 'checkpoint' : reachedTarget ? 'paused' : 'writing',
-          progressNotes: warnings.length
-            ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，但有警告：${warnings.join('；')}`
-            : reachCheckpoint
-              ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，触发 ${checkpointLabel}`
-              : reachedTarget
-                ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，达到指定进度`
-                : `已用${lightweight ? '轻量生成模式' : '单章质量模式'}写到第 ${nextCount} 章，继续朝第 ${targetProgress || initialState.writtenCount + batchCount} 章推进`,
-        },
+        automation: maybeUpdateToneDriftAfterWrite({ project: projectBeforeToneDrift, automation: automationBeforeToneDrift, chapterCount: nextCount }),
       });
 
       req.db.projects[projectIndex] = persistedProject;
@@ -6617,6 +6939,8 @@ export const __testHooks = {
   extractLabeledField,
   assertEnoughChapterCards,
   parseGeneratedChapterCardSection,
+  buildToneDriftReport,
+  maybeUpdateToneDriftAfterWrite,
   extractGeneratedSections,
   hasPacingRisk,
   findNaturalnessIssues,
@@ -7421,6 +7745,7 @@ app.post('/api/projects/:id/automation/plan', auth, async (req, res) => {
   const project = req.db.projects[index];
   const automation = project.automation || {};
   const effectiveInspiration = normalizeText(inspiration || project.automation?.inspiration || project.premise || project.summary);
+  const toneProtocol = buildToneProtocolGuide({ ...project, premise: [project.premise, effectiveInspiration].filter(Boolean).join('\n') }, automation);
 
   await writeAiDebugLog('automation.plan.config_resolved', {
     projectTitle: project.title,
@@ -7460,6 +7785,7 @@ app.post('/api/projects/:id/automation/plan', auth, async (req, res) => {
     `目标读者：${project.targetAudience}`,
     `文风要求：${project.styleGuide}`,
     `灵感：${effectiveInspiration}`,
+    buildToneProtocolGuide({ ...project, premise: [project.premise, effectiveInspiration].filter(Boolean).join('\n') }, automation),
     buildHumanWritingSystemGuide({ project, automation, scope: '长篇蓝图规划' }),
     buildPlatformStrategyGuide(project, { ...automation, platformStrategy: automation.platformStrategy }),
     '蓝图还必须初始化：长线伏笔类型、读者期待类型、主要爽点类型、角色关系主轴、金手指/系统规则阶段、章节功能轮换建议。',
@@ -7497,6 +7823,7 @@ app.post('/api/projects/:id/automation/plan', auth, async (req, res) => {
         targetChapters,
         averageChapterWords: Math.ceil(minimumWords / targetChapters),
         authorPersona: normalizeAuthorPersonaText(personaText),
+        toneProtocol,
         masterPlan: completedPlan.text,
         status: 'planned',
       },
@@ -7649,19 +7976,21 @@ app.post('/api/projects/:id/automation/generate-current', auth, async (req, res)
     const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: [generatedChapter], cards: [card], startChapter: targetChapterNumber, previousAutomation: automation, projectCharacters: project.characters || [] });
     const previousContentWords = countWords(existingChapter.content || '');
     const contentWordDelta = countWords(generatedChapter.content || '') - previousContentWords;
+    const automationBeforeToneDrift = {
+      ...automation,
+      ...ledgerUpdate,
+      continuityMemory: buildContinuityMemoryUpdate([generatedChapter], targetChapterNumber, automation.continuityMemory),
+      totalGeneratedWords: Math.max(0, (automation.totalGeneratedWords || 0) + contentWordDelta),
+      status: automation.status === 'idle' ? 'paused' : automation.status,
+      progressNotes: result.warnings?.length
+        ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}生成第 ${targetChapterNumber} 章，但有警告：${result.warnings.join('；')}`
+        : `已用${lightweight ? '轻量生成模式' : '单章质量模式'}生成第 ${targetChapterNumber} 章`,
+    };
+    const projectBeforeToneDrift = { ...project, chapters: nextChapters, automation: automationBeforeToneDrift };
     const nextProject = buildProjectPayload({
       ...project,
       chapters: nextChapters,
-      automation: {
-        ...automation,
-        ...ledgerUpdate,
-        continuityMemory: buildContinuityMemoryUpdate([generatedChapter], targetChapterNumber, automation.continuityMemory),
-        totalGeneratedWords: Math.max(0, (automation.totalGeneratedWords || 0) + contentWordDelta),
-        status: automation.status === 'idle' ? 'paused' : automation.status,
-        progressNotes: result.warnings?.length
-          ? `已用${lightweight ? '轻量生成模式' : '单章质量模式'}生成第 ${targetChapterNumber} 章，但有警告：${result.warnings.join('；')}`
-          : `已用${lightweight ? '轻量生成模式' : '单章质量模式'}生成第 ${targetChapterNumber} 章`,
-      },
+      automation: maybeUpdateToneDriftAfterWrite({ project: projectBeforeToneDrift, automation: automationBeforeToneDrift, chapterCount: targetChapterNumber }),
     });
 
     req.db.projects[index] = nextProject;
@@ -7719,7 +8048,8 @@ app.post('/api/projects/:id/automation/generate-current/stream', auth, async (re
       '7. 类型经验有边界：游戏、原作、系统或套路经验只用于初始误判、快速判断或被现实纠正；遇到真实伤痛、救人和关系冲突时优先写现场证据和人物选择。',
       '8. 系统提示只改变动作：系统提示必须独立成行、整行【】包住，只给目标、限制、风险、异常、奖励或代价，不能替作者讲世界观。',
       '9. 环境服务行动：每个环境段只保留会改变路线、遮挡视线、暴露敌人或提供可利用物的1-2个细节。',
-      '10. 首稿不要自我检查式写作：不要为了满足规则而逐条展示技巧，先让人物在麻烦里自然行动；详细检测交给后处理。',
+      '10. 基调优先自然落地：轻松日常优先写生活小目标、小麻烦、小收获和关系软化；轻喜反差优先写错位误会、奇怪但有效的处理和反差收益；高压求生也要让主角用判断或代价换回一点主动权。不要把所有作品都写成连续追杀、受伤和更大危险靠近。',
+      '11. 首稿不要自我检查式写作：不要为了满足规则而逐条展示技巧，先让人物在麻烦里自然行动；详细检测交给后处理。',
       '作品信息：',
       `作品名：${project.title}`,
       `题材：${project.genre}`,
@@ -7727,6 +8057,8 @@ app.post('/api/projects/:id/automation/generate-current/stream', auth, async (re
       `核心设定：${project.premise}`,
       '作者人设：',
       automation.authorPersona || '',
+      buildToneProtocolGuide(project, automation),
+      buildToneDriftGuide(automation),
       '长篇蓝图：',
       automation.masterPlan || '',
       buildAutomationMemoryGuide(project, automation),
@@ -7755,7 +8087,9 @@ app.post('/api/projects/:id/automation/generate-current/stream', auth, async (re
     const nextChapters = chapters.map((chapter, chapterIndex) => (chapterIndex === selectedIndex ? generatedChapter : chapter));
     const ledgerUpdate = buildAutomationLedgerUpdate({ chapters: [generatedChapter], cards: [card], startChapter: targetChapterNumber, previousAutomation: automation, projectCharacters: project.characters || [] });
     const contentWordDelta = countWords(generatedChapter.content || '') - countWords(existingChapter.content || '');
-    const nextProject = buildProjectPayload({ ...project, chapters: nextChapters, automation: { ...automation, ...ledgerUpdate, continuityMemory: buildContinuityMemoryUpdate([generatedChapter], targetChapterNumber, automation.continuityMemory), totalGeneratedWords: Math.max(0, (automation.totalGeneratedWords || 0) + contentWordDelta), status: automation.status === 'idle' ? 'paused' : automation.status, progressNotes: `已用轻量流式生成第 ${targetChapterNumber} 章` } });
+    const automationBeforeToneDrift = { ...automation, ...ledgerUpdate, continuityMemory: buildContinuityMemoryUpdate([generatedChapter], targetChapterNumber, automation.continuityMemory), totalGeneratedWords: Math.max(0, (automation.totalGeneratedWords || 0) + contentWordDelta), status: automation.status === 'idle' ? 'paused' : automation.status, progressNotes: `已用轻量流式生成第 ${targetChapterNumber} 章` };
+    const projectBeforeToneDrift = { ...project, chapters: nextChapters, automation: automationBeforeToneDrift };
+    const nextProject = buildProjectPayload({ ...project, chapters: nextChapters, automation: maybeUpdateToneDriftAfterWrite({ project: projectBeforeToneDrift, automation: automationBeforeToneDrift, chapterCount: targetChapterNumber }) });
     if (signal?.aborted) throw new Error('AI 请求已中断');
     req.db.projects[index] = nextProject;
     await writeDb(req.db);
@@ -7873,23 +8207,25 @@ app.post('/api/projects/:id/automation/generate-next/stream', auth, async (req, 
     const reachedTarget = targetProgress ? nextCount >= Number(targetProgress) : true;
     const warnings = result.warnings || [];
     const shouldPauseForReview = getAutomationReviewPause(warnings);
+    const automationBeforeToneDrift = {
+      ...automation,
+      ...ledgerUpdate,
+      continuityMemory: buildContinuityMemoryUpdate(generatedChapters, chapterNumber, automation.continuityMemory),
+      totalGeneratedWords: (automation.totalGeneratedWords || 0) + batchWords,
+      targetProgress: targetProgress || automation.targetProgress,
+      waitingForReview: reachCheckpoint || shouldPauseForReview,
+      status: shouldPauseForReview ? 'review' : reachCheckpoint ? 'checkpoint' : reachedTarget ? 'paused' : 'writing',
+      progressNotes: warnings.length
+        ? `已流式写到第 ${nextCount} 章，但有警告：${warnings.join('；')}`
+          : reachCheckpoint
+            ? `已流式写到第 ${nextCount} 章，触发 ${checkpointLabel}`
+            : `已流式写到第 ${nextCount} 章`,
+    };
+    const projectBeforeToneDrift = { ...project, chapters: chaptersForProject, automation: automationBeforeToneDrift };
     const nextProject = buildProjectPayload({
       ...project,
       chapters: chaptersForProject,
-      automation: {
-        ...automation,
-        ...ledgerUpdate,
-        continuityMemory: buildContinuityMemoryUpdate(generatedChapters, chapterNumber, automation.continuityMemory),
-        totalGeneratedWords: (automation.totalGeneratedWords || 0) + batchWords,
-        targetProgress: targetProgress || automation.targetProgress,
-        waitingForReview: reachCheckpoint || shouldPauseForReview,
-        status: shouldPauseForReview ? 'review' : reachCheckpoint ? 'checkpoint' : reachedTarget ? 'paused' : 'writing',
-        progressNotes: warnings.length
-          ? `已流式写到第 ${nextCount} 章，但有警告：${warnings.join('；')}`
-            : reachCheckpoint
-              ? `已流式写到第 ${nextCount} 章，触发 ${checkpointLabel}`
-              : `已流式写到第 ${nextCount} 章`,
-      },
+      automation: maybeUpdateToneDriftAfterWrite({ project: projectBeforeToneDrift, automation: automationBeforeToneDrift, chapterCount: nextCount }),
     });
     if (signal?.aborted) throw new Error('AI 请求已中断');
     req.db.projects[index] = nextProject;
@@ -7933,6 +8269,7 @@ app.post('/api/projects/:id/automation/auto-volumes', auth, async (req, res) => 
     `最低总字数：${automation.minimumWords || 1500000}`,
     `参考总章节：${automation.targetChapters || 600}`,
     buildHumanWritingSystemGuide({ project, automation, scope: '自动分卷' }),
+    buildToneProtocolGuide(project, automation),
     buildAuthorPersonaGuide(automation.authorPersona),
     automation.masterPlan,
   ].join('\n');
@@ -8009,7 +8346,7 @@ app.post('/api/projects/:id/automation/chapter-cards', auth, async (req, res) =>
     '章节卡只安排剧情事件，必须给真人写作模块留下发挥空间：写清人物困境、错误行动、现实打断、信息差、结果和具体钩子，不要写正文写法。',
     '如果已有章节卡，只能从已有章节卡之后继续排，不能重写、覆盖或重复已有章节卡。',
     `本次目标续排第${nextCardStart}章到第${attemptTargetChapter}章，共${attemptCount}张章节卡；尽量写满，若受长度限制也必须至少返回1张完整章节卡。`,
-    '输出格式必须逐章严格重复：### 第X章 标题\n卷：...\n蓝图阶段：...\n本章目标：...\n核心事件：...\n出场人物：...\n关键物件/线索：...\n本章结果：...\n进度锁：...\n本章只允许：...\n本章禁止：...\n读者预期：...\n上一章遗留动作：...\n伏笔规划：...\n本章爽点：...\n平台适配：...\n系统规则：...\n摘要：...\n关键钩子：...',
+    '输出格式必须逐章严格重复：### 第X章 标题\n卷：...\n蓝图阶段：...\n本章目标：...\n核心事件：...\n出场人物：...\n关键物件/线索：...\n本章结果：...\n进度锁：...\n本章只允许：...\n本章禁止：...\n读者预期：...\n上一章遗留动作：...\n伏笔规划：...\n本章爽点：...\n平台适配：...\n系统规则：...\n压力等级：...\n主角主动选择：...\n主角拿回的主动权：...\n本章小收获：...\n章末钩子类型：...\n摘要：...\n关键钩子：...',
     '卷名必须从给定分卷列表中逐字选择，不允许自造卷名；摘要必须不能为空，但摘要只写剧情轨道，不写成正文复述。优先用“目标/事件/结果/限制/钩子”的短轨道句，不要使用“魏杰一度想...却...两人还没争出结果...本章结果是...结尾...”这类正文式因果复述。',
     '每张章节卡必须是慢节奏卡：只写当前章的小目标，不允许把后续几十章、几百章后的核心冲突提前放进摘要或钩子。',
     '“承接上一章”只能写在“上一章遗留动作”里，摘要、关键钩子、读者预期、本章只允许、本章禁止都必须写出具体事件，不能只写空泛承接句。',
@@ -8019,6 +8356,8 @@ app.post('/api/projects/:id/automation/chapter-cards', auth, async (req, res) =>
     buildReaderExpectationGuide(),
     buildChapterCardControlGuide(),
     buildHumanWritingSystemGuide({ project, automation, scope: '自动排章节卡' }),
+    buildToneChapterCardGuide(project, automation),
+    buildToneDriftGuide(automation),
     buildPlatformStrategyGuide(project, automation),
     buildAutomationMemoryGuide(project, automation),
     '章节卡连续性要求：每张卡必须说明它要承接上一章哪个动作、选择、伤势、隐瞒、系统提示或未解释线索；不能只写孤立剧情点。',
@@ -8042,7 +8381,7 @@ app.post('/api/projects/:id/automation/chapter-cards', auth, async (req, res) =>
     '分卷信息：',
     project.volumes.map((volume) => `${volume.title}\n定位：${volume.positioning}\n目标：${volume.goal}\n钩子：${volume.endingHook}`).join('\n\n'),
     '最近已有章节卡：',
-    existingCards.slice(-5).map((card) => `${card.order}. ${card.title}\n卷：${card.volumeName}\n读者预期：${card.readerExpectation || ''}\n上一章遗留动作：${card.openAction || ''}\n伏笔规划：${card.foreshadowing || ''}\n本章爽点：${card.commercialBeat || ''}\n平台适配：${card.platformNotes || ''}\n系统规则：${card.systemRule || ''}\n摘要：${card.summary}\n钩子：${card.hook}`).join('\n\n'),
+    existingCards.slice(-5).map((card) => `${card.order}. ${card.title}\n卷：${card.volumeName}\n读者预期：${card.readerExpectation || ''}\n上一章遗留动作：${card.openAction || ''}\n伏笔规划：${card.foreshadowing || ''}\n本章爽点：${card.commercialBeat || ''}\n平台适配：${card.platformNotes || ''}\n系统规则：${card.systemRule || ''}\n压力等级：${card.pressureLevel || ''}\n主角主动选择：${card.protagonistChoice || ''}\n主角拿回的主动权：${card.agencyRecovery || ''}\n本章小收获：${card.chapterReward || ''}\n章末钩子类型：${card.hookType || ''}\n摘要：${card.summary}\n钩子：${card.hook}`).join('\n\n'),
     ].join('\n');
   };
 
@@ -8132,7 +8471,7 @@ app.post('/api/projects/:id/automation/chapter-cards/stream', auth, async (req, 
         '章节卡只安排剧情事件，必须给真人写作模块留下发挥空间：写清人物困境、错误行动、现实打断、信息差、结果和具体钩子，不要写正文写法。',
         '如果已有章节卡，只能从已有章节卡之后继续排，不能重写、覆盖或重复已有章节卡。',
         `本次目标续排第${nextCardStart}章到第${attemptTargetChapter}章，共${attemptCount}张章节卡；尽量写满，若受长度限制也必须至少返回1张完整章节卡。`,
-        '输出格式必须逐章严格重复：### 第X章 标题\n卷：...\n蓝图阶段：...\n本章目标：...\n核心事件：...\n出场人物：...\n关键物件/线索：...\n本章结果：...\n进度锁：...\n本章只允许：...\n本章禁止：...\n读者预期：...\n上一章遗留动作：...\n伏笔规划：...\n本章爽点：...\n平台适配：...\n系统规则：...\n摘要：...\n关键钩子：...',
+        '输出格式必须逐章严格重复：### 第X章 标题\n卷：...\n蓝图阶段：...\n本章目标：...\n核心事件：...\n出场人物：...\n关键物件/线索：...\n本章结果：...\n进度锁：...\n本章只允许：...\n本章禁止：...\n读者预期：...\n上一章遗留动作：...\n伏笔规划：...\n本章爽点：...\n平台适配：...\n系统规则：...\n压力等级：...\n主角主动选择：...\n主角拿回的主动权：...\n本章小收获：...\n章末钩子类型：...\n摘要：...\n关键钩子：...',
         '卷名必须从给定分卷列表中逐字选择，不允许自造卷名；摘要必须不能为空，但摘要只写剧情轨道，不写成正文复述。优先用“目标/事件/结果/限制/钩子”的短轨道句，不要使用“魏杰一度想...却...两人还没争出结果...本章结果是...结尾...”这类正文式因果复述。',
         '每张章节卡必须是慢节奏卡：只写当前章的小目标，不允许把后续几十章、几百章后的核心冲突提前放进摘要或钩子。',
         `第${nextCardStart}章是本次续排的第一张卡，必须写出清晰的新场景、新冲突和本章结果，不能只复述上一章。`,
@@ -8140,6 +8479,8 @@ app.post('/api/projects/:id/automation/chapter-cards/stream', auth, async (req, 
         buildReaderExpectationGuide(),
         buildChapterCardControlGuide(),
         buildHumanWritingSystemGuide({ project, automation, scope: '自动排章节卡' }),
+        buildToneChapterCardGuide(project, automation),
+        buildToneDriftGuide(automation),
         buildPlatformStrategyGuide(project, automation),
         buildAutomationMemoryGuide(project, automation),
         '章节卡连续性要求：每张卡必须说明它要承接上一章哪个动作、选择、伤势、隐瞒、系统提示或未解释线索；不能只写孤立剧情点。',
@@ -8162,7 +8503,7 @@ app.post('/api/projects/:id/automation/chapter-cards/stream', auth, async (req, 
         '分卷信息：',
         project.volumes.map((volume) => `${volume.title}\n定位：${volume.positioning}\n目标：${volume.goal}\n钩子：${volume.endingHook}`).join('\n\n'),
         '最近已有章节卡：',
-        existingCards.slice(-5).map((card) => `${card.order}. ${card.title}\n卷：${card.volumeName}\n读者预期：${card.readerExpectation || ''}\n上一章遗留动作：${card.openAction || ''}\n伏笔规划：${card.foreshadowing || ''}\n本章爽点：${card.commercialBeat || ''}\n平台适配：${card.platformNotes || ''}\n系统规则：${card.systemRule || ''}\n摘要：${card.summary}\n钩子：${card.hook}`).join('\n\n'),
+        existingCards.slice(-5).map((card) => `${card.order}. ${card.title}\n卷：${card.volumeName}\n读者预期：${card.readerExpectation || ''}\n上一章遗留动作：${card.openAction || ''}\n伏笔规划：${card.foreshadowing || ''}\n本章爽点：${card.commercialBeat || ''}\n平台适配：${card.platformNotes || ''}\n系统规则：${card.systemRule || ''}\n压力等级：${card.pressureLevel || ''}\n主角主动选择：${card.protagonistChoice || ''}\n主角拿回的主动权：${card.agencyRecovery || ''}\n本章小收获：${card.chapterReward || ''}\n章末钩子类型：${card.hookType || ''}\n摘要：${card.summary}\n钩子：${card.hook}`).join('\n\n'),
       ].join('\n');
     };
     send({ type: 'phase', text: `正在流式排第${nextCardStart}-${targetCardChapter}章章节卡` });

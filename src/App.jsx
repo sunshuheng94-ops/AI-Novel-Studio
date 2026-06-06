@@ -153,6 +153,34 @@ const platformModeOptions = [
   { value: 'ciweimao', label: '刺猬猫' },
 ];
 
+const toneModeOptions = [
+  { value: 'daily', label: '轻松日常', hint: '小目标、小麻烦、小收获、关系升温' },
+  { value: 'comedy', label: '轻喜反差', hint: '错位误会、奇怪处理、反差收益' },
+  { value: 'adventure', label: '冒险成长', hint: '探索、阻碍、能力尝试、阶段成果' },
+  { value: 'power', label: '爽文升级', hint: '被低估、准备兑现、旁人改观' },
+  { value: 'survival', label: '高压求生', hint: '危机、取舍、代价、反打窗口' },
+  { value: 'ensemble', label: '群像史诗', hint: '多线角色、阵营压力、阶段交汇' },
+];
+
+const toneMixOptions = [
+  { key: 'daily', label: '日常' },
+  { key: 'adventure', label: '冒险' },
+  { key: 'power', label: '爽点' },
+  { key: 'comedy', label: '反差' },
+  { key: 'survival', label: '高压' },
+];
+
+const defaultToneSettings = {
+  primary: 'adventure',
+  mix: {
+    daily: 30,
+    adventure: 40,
+    power: 20,
+    comedy: 10,
+    survival: 0,
+  },
+};
+
 const automationLedgerLimits = {
   foreshadowingLedger: 240,
   readerExpectations: 160,
@@ -173,9 +201,91 @@ function getPlatformStrategy(project) {
   };
 }
 
-const appVersion = '1.8.3';
+function getToneSettings(project) {
+  const current = project?.automation?.toneSettings || {};
+  return {
+    primary: current.primary || defaultToneSettings.primary,
+    mix: {
+      ...defaultToneSettings.mix,
+      ...(current.mix || {}),
+    },
+  };
+}
+
+function formatToneProtocol(settings = defaultToneSettings) {
+  const modeLabel = toneModeOptions.find((item) => item.value === settings.primary)?.label || '冒险成长';
+  const mixText = toneMixOptions
+    .map((item) => `${item.label}${Number(settings.mix?.[item.key]) || 0}%`)
+    .join(' / ');
+  return `作品风格驾驶舱：主基调=${modeLabel}；混合比例=${mixText}。后续蓝图、章节卡、正文和基调诊断优先按此执行。`;
+}
+
+function scoreText(text = '', patterns = []) {
+  return patterns.reduce((score, pattern) => score + (pattern.test(text) ? 1 : 0), 0);
+}
+
+function recommendToneSettings(project) {
+  const automation = project?.automation || {};
+  const text = [
+    project?.title,
+    project?.genre,
+    project?.premise,
+    project?.targetAudience,
+    project?.styleGuide,
+    project?.summary,
+    automation.inspiration,
+    automation.authorPersona,
+    automation.masterPlan,
+    automation.toneDriftReport,
+    ...(automation.chapterCards || []).slice(0, 20).map((card) => `${card.summary || ''} ${card.hook || ''} ${card.commercialBeat || ''}`),
+  ].filter(Boolean).join('\n');
+
+  const scores = {
+    daily: scoreText(text, [/轻松|日常|治愈|悠闲|温馨|陪伴|可爱|幼崽|种田|生活|小目标|关系升温/]),
+    comedy: scoreText(text, [/轻喜|沙雕|反差|吐槽|搞笑|欢脱|魔法少女|羞耻|互怼|误会|错位/]),
+    adventure: scoreText(text, [/冒险|旅行|探索|秘境|宝可梦|异世界|修仙|历练|成长|森林|路线|新区域/]),
+    power: scoreText(text, [/爽文|升级|打脸|装逼|逆袭|无敌|奖励|变强|高光|爽点|获得感|系统奖励/]),
+    survival: scoreText(text, [/末世|求生|逃杀|追杀|战场|战争|废墟|撤离|搜打撤|高压|敌人|危险|审问|受伤/]),
+    ensemble: scoreText(text, [/群像|史诗|阵营|多线|文明|战争|组织|势力|角色线|多主角/]),
+  };
+
+  let primary = Object.entries(scores).sort((a, b) => b[1] - a[1])[0]?.[0] || 'adventure';
+  if (!scores[primary]) primary = 'adventure';
+
+  const mix = { daily: 20, adventure: 30, power: 20, comedy: 10, survival: 10 };
+  if (primary === 'daily') Object.assign(mix, { daily: 50, adventure: 25, power: 15, comedy: 10, survival: 0 });
+  if (primary === 'comedy') Object.assign(mix, { daily: 25, adventure: 20, power: 20, comedy: 30, survival: 5 });
+  if (primary === 'adventure') Object.assign(mix, { daily: 20, adventure: 45, power: 20, comedy: 5, survival: 10 });
+  if (primary === 'power') Object.assign(mix, { daily: 10, adventure: 25, power: 45, comedy: 5, survival: 15 });
+  if (primary === 'survival') Object.assign(mix, { daily: 5, adventure: 25, power: 25, comedy: 0, survival: 45 });
+  if (primary === 'ensemble') Object.assign(mix, { daily: 10, adventure: 35, power: 25, comedy: 5, survival: 25 });
+
+  if (scores.daily >= 2) mix.daily = Math.max(mix.daily, primary === 'daily' ? 50 : 30);
+  if (scores.comedy >= 2) mix.comedy = Math.max(mix.comedy, primary === 'comedy' ? 30 : 15);
+  if (scores.power >= 2) mix.power = Math.max(mix.power, 25);
+  if (scores.survival >= 2 && !/轻松|日常|治愈|悠闲/.test(text)) mix.survival = Math.max(mix.survival, 25);
+  if (/轻松|日常|治愈|悠闲|温馨/.test(text)) mix.survival = Math.min(mix.survival, 10);
+  if (/基调偏移|高压章节偏多|危险钩子偏多/.test(text) && primary !== 'survival') {
+    mix.daily = Math.max(mix.daily, 30);
+    mix.survival = Math.min(mix.survival, 10);
+  }
+
+  return { primary, mix, scores };
+}
+
+const appVersion = '1.8.4';
 
 const changelogItems = [
+  {
+    version: '1.8.4',
+    date: '2026-06-06',
+    title: '作品风格驾驶舱',
+    changes: [
+      '新增作品风格驾驶舱，可设置主基调和日常、冒险、爽点、反差、高压混合比例。',
+      '新增智能推荐比例，根据作品设定、蓝图、章节卡和基调诊断推荐更贴合作品的风格配置。',
+      '新增5章基调诊断开关，可关闭自动诊断及旧诊断对后续章节卡和正文的影响。',
+    ],
+  },
   {
     version: '1.8.3',
     date: '2026-05-29',
@@ -1363,6 +1473,39 @@ export default function App() {
     });
   }
 
+  function updateToneSettings(updater) {
+    if (!selectedProject) return;
+    const latestProject = getLatestSelectedProject() || selectedProject;
+    const current = getToneSettings(latestProject);
+    const nextSettings = typeof updater === 'function' ? updater(current) : { ...current, ...updater };
+    updateSelectedProject('automation', {
+      ...latestProject.automation,
+      toneSettings: nextSettings,
+      toneProtocol: formatToneProtocol(nextSettings),
+      progressNotes: '作品风格驾驶舱已更新，后续蓝图、章节卡、自动写作和基调诊断会按新基调执行',
+    });
+  }
+
+  function updateToneMix(key, value) {
+    const safeValue = Math.max(0, Math.min(100, Number(value) || 0));
+    updateToneSettings((current) => ({
+      ...current,
+      mix: {
+        ...current.mix,
+        [key]: safeValue,
+      },
+    }));
+  }
+
+  function applyRecommendedToneSettings() {
+    if (!selectedProject) return;
+    const recommended = recommendToneSettings(selectedProject);
+    updateToneSettings({ primary: recommended.primary, mix: recommended.mix });
+    const modeLabel = toneModeOptions.find((item) => item.value === recommended.primary)?.label || '冒险成长';
+    const mixText = toneMixOptions.map((item) => `${item.label}${recommended.mix[item.key]}%`).join(' / ');
+    setStatus(`已按灵感和蓝图推荐：${modeLabel}；${mixText}`);
+  }
+
   function updateAutomationOption(field, value) {
     if (!selectedProject) return;
     updateSelectedProject('automation', {
@@ -1370,6 +1513,8 @@ export default function App() {
       [field]: value,
       progressNotes: field === 'lightweightGeneration'
         ? `轻量生成模式已${value ? '开启' : '关闭'}`
+        : field === 'toneDriftEnabled'
+          ? `5章基调诊断已${value ? '开启' : '关闭'}`
         : selectedProject.automation?.progressNotes,
     });
   }
@@ -3308,6 +3453,72 @@ export default function App() {
                       />
                       <span>{selectedProject.automation?.lightweightGeneration ? '已开启' : '已关闭'}</span>
                     </label>
+                  </div>
+                  <div className="panel tone-cockpit">
+                    <div className="section-header">
+                      <div>
+                        <strong>作品风格驾驶舱</strong>
+                        <span>控制蓝图、章节卡、正文和5章基调诊断</span>
+                      </div>
+                      <div className="tone-cockpit-actions">
+                        <span>{toneModeOptions.find((item) => item.value === getToneSettings(selectedProject).primary)?.label || '冒险成长'}</span>
+                        <button type="button" className="secondary small" onClick={applyRecommendedToneSettings}>智能推荐比例</button>
+                        <label className="tone-drift-switch">
+                          <input
+                            type="checkbox"
+                            checked={selectedProject.automation?.toneDriftEnabled !== false}
+                            onChange={(event) => updateAutomationOption('toneDriftEnabled', event.target.checked)}
+                          />
+                          <span>5章诊断{selectedProject.automation?.toneDriftEnabled === false ? '关' : '开'}</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div className="tone-mode-grid">
+                      {toneModeOptions.map((option) => {
+                        const currentTone = getToneSettings(selectedProject);
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={currentTone.primary === option.value ? 'tone-mode-card active' : 'tone-mode-card'}
+                            onClick={() => updateToneSettings((current) => ({ ...current, primary: option.value }))}
+                          >
+                            <strong>{option.label}</strong>
+                            <small>{option.hint}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="tone-mix-panel">
+                      <div className="tone-mix-head">
+                        <strong>混合比例</strong>
+                        <span>当前合计 {toneMixOptions.reduce((sum, item) => sum + (Number(getToneSettings(selectedProject).mix[item.key]) || 0), 0)}%</span>
+                      </div>
+                      {toneMixOptions.map((item) => {
+                        const value = Number(getToneSettings(selectedProject).mix[item.key]) || 0;
+                        return (
+                          <label key={item.key} className="tone-slider">
+                            <span>{item.label}</span>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              step="5"
+                              value={value}
+                              onChange={(event) => updateToneMix(item.key, event.target.value)}
+                            />
+                            <strong>{value}%</strong>
+                          </label>
+                        );
+                      })}
+                      <small>比例不强制等于100%，你可以按作品需要自由调。示例：日常50 / 冒险30 / 爽点20。</small>
+                    </div>
+                    {selectedProject.automation?.toneDriftReport ? (
+                      <div className="tone-drift-brief">
+                        <strong>最新5章基调诊断</strong>
+                        <p>{selectedProject.automation.toneDriftReport.split('\n')[0]}</p>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="panel slider-panel">
                     <div className="section-header"><strong>平台策略</strong><span>自动写作总开关</span></div>
