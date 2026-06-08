@@ -273,9 +273,20 @@ function recommendToneSettings(project) {
   return { primary, mix, scores };
 }
 
-const appVersion = '1.8.4';
+const appVersion = '1.8.5';
 
 const changelogItems = [
+  {
+    version: '1.8.5',
+    date: '2026-06-08',
+    title: '检查点报告泛用化',
+    changes: [
+      '检查点报告移除固定“搜打撤/系统规则”小节，避免非系统文被套用系统文检查框架。',
+      '轻量模式检查改为关注能力或设定边界，更适配宝可梦、修仙、同人和无系统题材。',
+      '报告结构编号顺延，下一阶段写作指令仍保留可直接喂给自动写作的格式。',
+      'GitHub 源码切换为无 Live2D 版本，桌面打包默认输出无 Live2D 安装包。',
+    ],
+  },
   {
     version: '1.8.4',
     date: '2026-06-06',

@@ -1,6 +1,6 @@
 {
   "name": "ai-novel-studio",
-  "version": "1.8.4",
+  "version": "1.8.5",
   "private": true,
   "description": "面向番茄小说创作的本地多用户 AI 写作桌面软件",
   "author": "OpenCode",
@@ -21,8 +21,6 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "lucide-react": "^0.511.0",
-    "pixi-live2d-display": "^0.4.0",
-    "pixi.js": "^6.5.10",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -46,6 +44,8 @@
     "electronVersion": "35.7.5",
     "files": [
       "web-dist/**/*",
+      "!web-dist/live2d/**/*",
+      "!web-dist/live2dcubismcore.min.js",
       "server.js",
       "projectRepository.js",
       "naturalnessGate.js",
@@ -55,11 +55,14 @@
       "build/icon.ico",
       "electron/**/*",
       "node_modules/**/*",
+      "!node_modules/@pixi/**/*",
+      "!node_modules/pixi.js/**/*",
+      "!node_modules/pixi-live2d-display/**/*",
       "package.json"
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.8.4"
+      "output": "release-1.8.5"
     },
     "win": {
       "target": "nsis",
