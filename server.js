@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createProjectRepository } from './projectRepository.js';
+import { buildCommercialSerialGuide, buildPlatformStrategyGuideText } from './commercialSerialGuide.js';
 import {
   classifyNaturalnessIssues,
   detailFlowIssueTypes,
@@ -906,6 +907,29 @@ function cleanImportedChapterTitle(rawTitle = '', fallbackTitle = '新章节') {
   return title || fallback;
 }
 
+function buildNaturalChapterTitleGuide(scope = 'general') {
+  const base = [
+    '章节标题自然化：',
+    '1. 标题像真人作者临时取的章节名，优先抓一个具体动作、物件、关系变化、异常声音、短句台词或小结果，不要像卖点清单。',
+    '2. 避免高频公式：不要连续使用“系统/奖励/危机/真相/反转/觉醒/升级/选择/新的线索/真正的危机”等抽象词做标题核心。',
+    '3. 标题通常控制在2-9个汉字或一个短语；可以朴素、口语、带一点悬念，但不要每章都像广告标语。',
+    '4. 首章可以命中核心卖点，但优先用处境化表达，不要硬塞完整设定名；后续章节优先贴当前章的独有现场，不重复题材标签。',
+  ];
+  if (scope === 'chapter-card') {
+    return [
+      ...base,
+      '章节卡标题要求：标题不要只写“系统升级/新的线索/危机逼近/主动选择”。优先写成本章能让读者记住的一个现场词，例如一张卡片、一句警告、半瓶药、侧门、旧频道、雨里的脚步。',
+    ].join('\n');
+  }
+  if (scope === 'draft') {
+    return [
+      ...base,
+      '正文输出标题要求：如果章节卡标题已经自然，沿用即可；如果章节卡标题很像功能清单，可以取一个更贴现场的短标题，但不要改变章节剧情。',
+    ].join('\n');
+  }
+  return base.join('\n');
+}
+
 function cleanStoredChapterTitle(value = '') {
   return cleanImportedChapterTitle(value, '新章节');
 }
@@ -1479,25 +1503,9 @@ function buildVoiceDriftGuard(project = {}) {
   ].filter(Boolean).join('\n');
 }
 
-const platformModeLabels = {
-  fanqie: '番茄',
-  qidian: '起点',
-  ciweimao: '刺猬猫',
-};
-
 function buildPlatformStrategyGuide(project = {}, automation = {}) {
   const strategy = normalizePlatformStrategy(automation.platformStrategy, project);
-  return [
-    '平台策略（影响章节卡、正文、审校，不要在正文中明说）：',
-    `主平台口味：${platformModeLabels[strategy.primary] || strategy.primary}`,
-    `阅读节奏适配：${platformModeLabels[strategy.pace] || strategy.pace}`,
-    `长篇结构约束：${platformModeLabels[strategy.structure] || strategy.structure}`,
-    `发布目标：${platformModeLabels[strategy.publishTarget] || strategy.publishTarget}`,
-    strategy.tags.length ? `题材标签：${strategy.tags.join(' / ')}` : '',
-    strategy.primary === 'ciweimao' ? '刺猬猫口味：重视同人梗、角色还原、宅味反差、原作遗憾推进；主角不能压扁原作角色，梗必须服务剧情。' : '',
-    strategy.primary === 'fanqie' || strategy.pace === 'fanqie' ? '番茄节奏：开头快、冲突早、目标明确、每章有结果或奖励感，章末钩子要具体。节奏快不等于碎句多；普通信息仍要自然承接，避免把“解释少”写成缺词、短句链或分镜标签。' : '',
-    strategy.structure === 'qidian' ? '起点结构：体系自洽、能力有代价、反派梯度清楚、伏笔可长线但必须阶段推进，禁止临时外挂。' : '',
-  ].filter(Boolean).join('\n');
+  return buildPlatformStrategyGuideText({ project, automation, strategy, normalizeText });
 }
 
 function formatLedgerItems(title, items = [], formatter = (item) => String(item), empty = '暂无') {
@@ -2623,6 +2631,7 @@ async function generateCheckpointReportForProject({ db, projectIndex, project, a
       : '1. 总体结论：继续 / 暂停修订 / 需要重排章节卡（三选一，并给一句原因）。',
     `2. 蓝图与章节卡执行：最近${checkpointInterval}章是否按蓝图阶段推进，哪些章节偏离或提前兑现。`,
     '3. 番茄读感：开局钩子、爽点兑现、危机密度、章末钩子、阅读顺滑度，指出最影响追读的3个问题。',
+    '3b. 商业连载健康度：检查主角是否连续多章被动、金手指/系统是否改变解决问题方式、线索是否只滚动不兑现、爽点/收获是否拖欠、本阶段卖点是否已经展示、章节是否有小闭环、平台策略是否被正确执行。必须给后续3-5章可直接写入章节卡的修正方向。',
     '4. 真人写作感：是否有AI味、模板化排比、分镜提纲感、功能性喊话过多、能力/设定提示格式生硬；只列具体章节和可执行修法。',
     '5. 角色与口吻：主角吐槽、判断、害怕、行动是否稳定；重要配角是否口吻漂移。',
     '6. 伏笔与读者期待台账：列出新增、推进、回收、拖欠，标明下一阶段优先回应项。',
@@ -2635,6 +2644,7 @@ async function generateCheckpointReportForProject({ db, projectIndex, project, a
     '最后单独输出【阶段建议】，逐项写明：1. 是否建议点击“继续写”；2. 是否建议点击“重排后续章节卡”；3. 是否建议点击“重新自动分卷”；4. 是否建议点击“保存检查建议到蓝图”。',
     buildVoiceDriftGuard(project),
     buildReaderExpectationGuide(),
+    buildCommercialSerialGuide('checkpoint'),
     buildPlatformStrategyGuide(project, automation),
     buildAutomationMemoryGuide(project, automation),
     '长篇蓝图：',
@@ -5434,9 +5444,10 @@ function buildTitleCoreSellContract({ project = {}, card = {}, chapterNumber = 1
   if (/修仙|仙侠/.test(text)) hooks.push('修仙反差');
   return {
     rules: [
-      chapterNumber === 1 ? '首章标题至少命中一个核心卖点，不能只概括动作。' : '标题优先贴当前章卖点，不只写地点或动作。',
+      chapterNumber === 1 ? '首章标题可以命中核心卖点，但要像自然章节名，不要把完整设定名硬塞进标题。' : '标题优先贴当前章独有现场，不只写地点、动作或抽象卖点。',
       hooks.length ? `本书标题可用核心卖点：${hooks.join('、')}。` : '标题优先呈现人物处境、冲突或反差。',
-      '如果题材有系统/转生/强反差，标题优先展示反差或生存压力。',
+      '如果题材有系统/转生/强反差，标题可以展示反差或生存压力，但优先处境化表达，例如用一句台词、一个物件或一个具体麻烦承载卖点。',
+      buildNaturalChapterTitleGuide('draft'),
     ],
   };
 }
@@ -6416,6 +6427,7 @@ async function generateAutomationChapter({ apiKey, model, baseUrl, project, auto
     '不要生成摘要；章节摘要由系统使用章节卡自动写入。',
     '正文第一行禁止再次输出标题、Markdown 标题或“# 第X章”；正文只能从小说内容开始。',
     '真人写作引擎决定本章怎么写；段落节奏谱是下游草图，不得压过人物口吻、错误行动、现实打断和场景选择。',
+    buildNaturalChapterTitleGuide('draft'),
     humanEnginePrompt,
     '硬性一致性规则：1. 不得提前进入蓝图后期核心冲突；2. 必须按章节卡和分卷定位控制节奏；3. 反派只能按蓝图梯度逐级登场/施压，不能提前暴露终局反派或越级冲突；4. 若章节卡没有要求，不能新增脱离蓝图的大事件、阵营、危机或设定；5. 本章只写“铺垫、推进、兑现本阶段小冲突”，不能跳到下一卷或下一阶段。',
     buildPacingGuardText({ currentCount: chapterNumber - 1, batchCount: 1, targetChapters: automation.targetChapters || 600 }),
@@ -6501,6 +6513,7 @@ async function generateLightweightAutomationChapter({ apiKey, model, baseUrl, pr
     '输出格式必须严格为：### 第X章 标题\n摘要：...\n正文：...',
     '叙事人称：第三人称有限视角，主视角跟随当前主角；不要用第一人称做正文叙述。',
     '正文长度：1500-4000中文字符；宁可少写，也不要扩成长章。',
+    buildNaturalChapterTitleGuide('draft'),
     '系统提示格式：系统弹窗必须独立成行，整行用【】包住；不要写成【搜】附近可回收物资这种半框格式，应写成【搜：附近可回收物资为运输车残骸】。',
     buildNoMetaNarrationGuide(),
     buildHumanWebNovelReadabilityGuide(),
@@ -7008,6 +7021,7 @@ export const __testHooks = {
   formatStyleTextureContract,
   buildTitleCoreSellContract,
   formatTitleCoreSellContract,
+  buildNaturalChapterTitleGuide,
   buildEscapeInteractionContract,
   formatEscapeInteractionContract,
   buildDetailSelectionContract,
@@ -7059,6 +7073,7 @@ export const __testHooks = {
   buildVoiceRosterGuide,
   sanitizeChapterCardForHumanEngine,
   buildPlatformStrategyGuide,
+  buildCommercialSerialGuide,
   buildAutomationMemoryGuide,
   buildAutomationLedgerUpdate,
   getAutomationReviewPause,
@@ -7780,16 +7795,18 @@ app.post('/api/projects/:id/automation/plan', auth, async (req, res) => {
     `最低总字数要求：${minimumWords}`,
     `参考章节规模：${targetChapters}`,
     `作品名：${project.title}`,
-    `题材：${project.genre}`,
-    `目标读者：${project.targetAudience}`,
-    `文风要求：${project.styleGuide}`,
-    `灵感：${effectiveInspiration}`,
-    buildToneProtocolGuide({ ...project, premise: [project.premise, effectiveInspiration].filter(Boolean).join('\n') }, automation),
-    buildHumanWritingSystemGuide({ project, automation, scope: '长篇蓝图规划' }),
-    buildPlatformStrategyGuide(project, { ...automation, platformStrategy: automation.platformStrategy }),
-    '蓝图还必须初始化：长线伏笔类型、读者期待类型、主要爽点类型、角色关系主轴、金手指/系统规则阶段、章节功能轮换建议。',
-    '请直接输出详细策划，不要解释。',
-  ].join('\n');
+     `题材：${project.genre}`,
+     `目标读者：${project.targetAudience}`,
+     `文风要求：${project.styleGuide}`,
+     `灵感：${effectiveInspiration}`,
+     buildToneProtocolGuide({ ...project, premise: [project.premise, effectiveInspiration].filter(Boolean).join('\n') }, automation),
+     buildCommercialSerialGuide('blueprint'),
+     buildHumanWritingSystemGuide({ project, automation, scope: '长篇蓝图规划' }),
+     buildPlatformStrategyGuide(project, { ...automation, platformStrategy: automation.platformStrategy }),
+     '蓝图还必须初始化：长线伏笔类型、读者期待类型、主要爽点类型、角色关系主轴、金手指/系统规则阶段、章节功能轮换建议。',
+     '蓝图必须新增【商业连载承诺】部分，具体写清：题材承诺、主角需求缺口、金手指/能力解法、前3万字核心看点、阶段爽点循环、平台适配边界。不要写理论定义，要写本书可执行的剧情规划。',
+     '请直接输出详细策划，不要解释。',
+   ].join('\n');
 
   const personaPrompt = buildAuthorPersonaPrompt({
     project,
@@ -8351,8 +8368,10 @@ app.post('/api/projects/:id/automation/chapter-cards', auth, async (req, res) =>
     '“承接上一章”只能写在“上一章遗留动作”里，摘要、关键钩子、读者预期、本章只允许、本章禁止都必须写出具体事件，不能只写空泛承接句。',
     `第${nextCardStart}章是本次续排的第一张卡，必须写出清晰的新场景、新冲突和本章结果，不能只复述上一章。`,
     '进度锁必须写清“本章只能推进到什么程度”；本章禁止必须列出禁止提前触碰的后期事件、反派层级或秘密。',
+    buildNaturalChapterTitleGuide('chapter-card'),
     '章节卡禁止输出写法字段：不要写“开头方式/开头锚点/禁止开头/叙事手法/叙事目的/章节功能/对话密度/叙述质感/人味锚点/正文禁区/段落节奏”。这些由真人写作模块负责。',
     buildReaderExpectationGuide(),
+    buildCommercialSerialGuide('chapter-card'),
     buildChapterCardControlGuide(),
     buildHumanWritingSystemGuide({ project, automation, scope: '自动排章节卡' }),
     buildToneChapterCardGuide(project, automation),
@@ -8362,6 +8381,7 @@ app.post('/api/projects/:id/automation/chapter-cards', auth, async (req, res) =>
     '章节卡连续性要求：每张卡必须说明它要承接上一章哪个动作、选择、伤势、隐瞒、系统提示或未解释线索；不能只写孤立剧情点。',
     '伏笔账本要求：每张卡必须标明“新埋伏笔 / 推进伏笔 / 回收伏笔 / 暂不回收”之一，并写清伏笔对象。',
     '爽点要求：每张卡必须写“本章爽点”，可选信息爽、关系爽、系统奖励、行动兑现、反差梗、原作遗憾推进；调查章也必须有线索奖励感。爽点只写剧情兑现和读者获得感，不写正文口吻要求。',
+    '商业字段写实要求：读者预期必须写读者本章最想看到什么被回应；主角主动选择必须写主角亲自做出的决定；主角拿回的主动权必须写局面因主角发生的变化；本章小收获必须写资源、线索、关系、能力、地位、喘息、误会解除或下一步准备之一；本章爽点必须写读者本章拿到的明确反馈。',
     '章节卡只写剧情轨道，不规定正文口吻。可提示本章适合保留的角色压力、关系变化或系统规则，但不要要求每章固定出现吐槽、系统短讯、同人梗、史诗句或作者人设展示。',
     '章节卡去解释化：本章只允许、摘要、读者预期和钩子都要避免写成完整正文段落；不要替正文解释人物为什么这么判断，只标清当前章的目标、阻碍、错误行动、现实反馈、结果和禁止越界内容。',
     '支线寿命要求：同一地点、物件、谜团或异常最多连续占用5章；超过5章必须在本批收束、转场或回到卷级目标，不能继续滚出新谜团。',
@@ -8474,8 +8494,10 @@ app.post('/api/projects/:id/automation/chapter-cards/stream', auth, async (req, 
         '卷名必须从给定分卷列表中逐字选择，不允许自造卷名；摘要必须不能为空，但摘要只写剧情轨道，不写成正文复述。优先用“目标/事件/结果/限制/钩子”的短轨道句，不要使用“魏杰一度想...却...两人还没争出结果...本章结果是...结尾...”这类正文式因果复述。',
         '每张章节卡必须是慢节奏卡：只写当前章的小目标，不允许把后续几十章、几百章后的核心冲突提前放进摘要或钩子。',
         `第${nextCardStart}章是本次续排的第一张卡，必须写出清晰的新场景、新冲突和本章结果，不能只复述上一章。`,
+        buildNaturalChapterTitleGuide('chapter-card'),
         '章节卡禁止输出写法字段：不要写“开头方式/开头锚点/禁止开头/叙事手法/叙事目的/章节功能/对话密度/叙述质感/人味锚点/正文禁区/段落节奏”。这些由真人写作模块负责。',
         buildReaderExpectationGuide(),
+        buildCommercialSerialGuide('chapter-card'),
         buildChapterCardControlGuide(),
         buildHumanWritingSystemGuide({ project, automation, scope: '自动排章节卡' }),
         buildToneChapterCardGuide(project, automation),
@@ -8485,6 +8507,7 @@ app.post('/api/projects/:id/automation/chapter-cards/stream', auth, async (req, 
         '章节卡连续性要求：每张卡必须说明它要承接上一章哪个动作、选择、伤势、隐瞒、系统提示或未解释线索；不能只写孤立剧情点。',
         '伏笔账本要求：每张卡必须标明“新埋伏笔 / 推进伏笔 / 回收伏笔 / 暂不回收”之一，并写清伏笔对象。',
         '爽点要求：每张卡必须写“本章爽点”，可选信息爽、关系爽、系统奖励、行动兑现、反差梗、原作遗憾推进；调查章也必须有线索奖励感。爽点只写剧情兑现和读者获得感，不写正文口吻要求。',
+        '商业字段写实要求：读者预期必须写读者本章最想看到什么被回应；主角主动选择必须写主角亲自做出的决定；主角拿回的主动权必须写局面因主角发生的变化；本章小收获必须写资源、线索、关系、能力、地位、喘息、误会解除或下一步准备之一；本章爽点必须写读者本章拿到的明确反馈。',
         '章节卡只写剧情轨道，不规定正文口吻。可提示本章适合保留的角色压力、关系变化或系统规则，但不要要求每章固定出现吐槽、系统短讯、同人梗、史诗句或作者人设展示。',
         '章节卡去解释化：本章只允许、摘要、读者预期和钩子都要避免写成完整正文段落；不要替正文解释人物为什么这么判断，只标清当前章的目标、阻碍、错误行动、现实反馈、结果和禁止越界内容。',
         '支线寿命要求：同一地点、物件、谜团或异常最多连续占用5章；超过5章必须在本批收束、转场或回到卷级目标，不能继续滚出新谜团。',

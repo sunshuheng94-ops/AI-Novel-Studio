@@ -1,6 +1,6 @@
 {
   "name": "ai-novel-studio",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "private": true,
   "description": "面向番茄小说创作的本地多用户 AI 写作桌面软件",
   "author": "OpenCode",
@@ -14,7 +14,7 @@
     "desktop:dev": "node scripts/start-desktop-dev.mjs",
     "prepare-release": "node scripts/prepare-release.mjs",
     "generate-icons": "node scripts/generate-icons.mjs",
-    "test:parsers": "node scripts/test-parsers.mjs",
+    "test:parsers": "node scripts/test-parsers.mjs && node scripts/test-commercial-guides.mjs",
     "dist:desktop": "node scripts/prepare-release.mjs && npm run generate-icons && npm run build && node scripts/run-desktop-build.mjs"
   },
   "dependencies": {
@@ -47,6 +47,7 @@
       "!web-dist/live2d/**/*",
       "!web-dist/live2dcubismcore.min.js",
       "server.js",
+      "commercialSerialGuide.js",
       "projectRepository.js",
       "naturalnessGate.js",
       "promptComposer.js",
@@ -62,7 +63,7 @@
     ],
     "directories": {
       "buildResources": "build",
-      "output": "release-1.8.5"
+      "output": "release-1.8.6"
     },
     "win": {
       "target": "nsis",

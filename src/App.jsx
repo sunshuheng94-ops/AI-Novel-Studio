@@ -273,9 +273,19 @@ function recommendToneSettings(project) {
   return { primary, mix, scores };
 }
 
-const appVersion = '1.8.5';
+const appVersion = '1.8.6';
 
 const changelogItems = [
+  {
+    version: '1.8.6',
+    date: '2026-06-09',
+    title: '商业连载校准与自然标题',
+    changes: [
+      '新增商业连载校准层，强化蓝图、章节卡和检查点对主角行动力、爽点兑现、金手指解法和线索兑现的约束。',
+      '章节标题自然化，减少“系统升级/新的线索/危机逼近”等功能清单式标题。',
+      '拆出商业规则模块并增加无 AI 回归测试，降低后续提示词改动风险。',
+    ],
+  },
   {
     version: '1.8.5',
     date: '2026-06-08',

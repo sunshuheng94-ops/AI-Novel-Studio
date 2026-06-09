@@ -5,11 +5,13 @@ const { buildProjectPayload } = __testHooks;
 const { resetAutomationRuntimeState } = __testHooks;
 const { createTimeoutSignal, combineAbortSignals } = __testHooks;
 const { buildAuthorPersonaPrompt } = __testHooks;
+const { buildCommercialSerialGuide, buildPlatformStrategyGuide } = __testHooks;
 const { buildChapterAuditPrompt, buildChapterRewritePrompt, buildAutomationExpressionRewritePrompt, buildAutomationContinuityValidationPrompt, buildAutomationLightCheckPrompt } = __testHooks;
 const { generateAndPersistQualityChapters, formatChapterCard } = __testHooks;
 const { buildGenreKnowledgeContract, formatGenreKnowledgeContract } = __testHooks;
 const { buildStyleTextureContract, formatStyleTextureContract } = __testHooks;
 const { buildTitleCoreSellContract, formatTitleCoreSellContract } = __testHooks;
+const { buildNaturalChapterTitleGuide } = __testHooks;
 const { buildEscapeInteractionContract, formatEscapeInteractionContract } = __testHooks;
 const { repairChapterMetaNarrationLocally } = __testHooks;
 const { isAiHttpStatus, isRecoverableChapterCardError, cleanAutomationLedgersAfterChapterDelete } = __testHooks;
@@ -61,9 +63,12 @@ assert.ok(textureText.includes('同类情绪套句在同一章内出现三次以
 assert.ok(textureText.includes('不要为了规避情绪句而写过度设计的动作描写'), 'emotion rule should avoid over-engineered action prose');
 assert.ok(textureText.includes('每段最多突出一个强感受或强修饰'), 'texture contract should reduce modifier pileups');
 const titleText = formatTitleCoreSellContract(buildTitleCoreSellContract({ project: { premise: '转生成修仙世界的将死萝莉，获得魔法少女系统。' }, card: { title: '第1章 被撞醒' }, chapterNumber: 1 }));
-assert.ok(titleText.includes('首章标题至少命中一个核心卖点'), 'title contract should require core sell for chapter one');
+assert.ok(titleText.includes('首章标题可以命中核心卖点'), 'title contract should allow core sell without formulaic titles');
 assert.ok(titleText.includes('将死萝莉'), 'title contract should surface loli survival hook');
 assert.ok(titleText.includes('魔法少女系统'), 'title contract should surface system hook');
+assert.ok(titleText.includes('章节标题自然化'), 'title contract should include natural title guidance');
+assert.ok(buildNaturalChapterTitleGuide('chapter-card').includes('标题不要只写“系统升级'), 'chapter-card title guide should prevent formulaic titles');
+assert.ok(buildNaturalChapterTitleGuide('draft').includes('更贴现场的短标题'), 'draft title guide should allow natural title repair');
 const escapeText = formatEscapeInteractionContract(buildEscapeInteractionContract({ card: { summary: '主角濒死逃生，系统给二选一，门外有人查死。' }, scenePack: { title: '系统绑定 + 十秒二选一', goal: '逃过门外查死' } }));
 assert.ok(escapeText.includes('嘲讽/性格表达'), 'escape contract should require system personality in survival scenes');
 assert.ok(escapeText.includes('关系钩子'), 'escape contract should allow nearby character relationship hooks');
@@ -152,6 +157,8 @@ assert.ok(buildAutomationContinuityValidationPrompt({ project: promptProject, au
 assert.ok(buildAutomationLightCheckPrompt({ project: promptProject, automation: promptAutomation, chapter: promptChapter, card: promptCard, nextCard: null, chapterNumber: 2 }).includes('轻量发布前校验'), 'automation light check prompt should build');
 assert.equal(typeof generateAndPersistQualityChapters, 'function', 'quality persistence path should be exported for regression coverage');
 assert.ok(!formatChapterCard({ ...promptCard, openingType: 'time', dialogueDensity: 'high', humanTextureBeats: 'coffee' }, 2).includes('对话密度'), 'chapter card should default to story track only');
+assert.ok(buildCommercialSerialGuide('chapter-card').includes('章节卡不是事件清单'), 'server should expose commercial chapter-card guide');
+assert.ok(buildPlatformStrategyGuide({ title: '我在明日方舟搜打撤', genre: '明日方舟同人', premise: '穿越泰拉' }, { platformStrategy: { primary: 'ciweimao', pace: 'ciweimao', structure: 'qidian', publishTarget: 'ciweimao', tags: [] } }).includes('刺猬猫同人适配'), 'server platform guide should apply fanfic strategy');
 
 const auditPrefixed = `FAIL\n原因：第二章节奏略快，以下为修订。\n### 第1章 修订一\n摘要：第一章摘要。\n正文：第一章正文。\n### 第2章 修订二\n摘要：第二章摘要。\n正文：第二章正文。\n### 第3章 修订三\n摘要：第三章摘要。\n正文：第三章正文。`;
 const auditSections = extractGeneratedSections(auditPrefixed);
